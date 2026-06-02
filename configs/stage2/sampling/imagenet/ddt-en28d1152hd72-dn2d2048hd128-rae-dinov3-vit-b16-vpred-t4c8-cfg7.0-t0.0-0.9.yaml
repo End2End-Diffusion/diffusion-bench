@@ -1,0 +1,92 @@
+stage_1:
+  target: stage1.RAE
+  params:
+    encoder_name: 'dinov3-vit-b16'
+    resolution: 256
+    decoder_config_path: 'configs/decoder/ViTXL'
+    pretrained_decoder_path: 'pretrained_models/stage1/decoders/dinov3-vit-b16/decoder.pt'
+    noise_tau: 0.0
+    normalization_stat_path: 'pretrained_models/stage1/stats/dinov3-vit-b16/stats.pt'
+
+stage_2:
+  target: stage2.models.DDT.DiTwDDTHead
+  ckpt: 'pretrained_models/imagenet/ckpts/ddt-en28d1152hd72-dn2d2048hd128-rae-dinov3-vit-b16-vpred-t4c8-v0.pt'
+  params:
+    input_size: 16
+    patch_size: [1, 1]
+    in_channels: 768
+    hidden_size: [1152, 2048]
+    depth: [28, 2]
+    num_heads: [16, 16]
+    mlp_ratio: 4.0
+
+conditioning:
+  type: "label"
+  cfg_dropout_prob: 0.1
+  arch:
+      num_t_tokens: 4
+      num_c_tokens: 8
+
+transport:
+  prediction: 'velocity'
+  time_dist_type: 'logit-normal_0_1'
+
+sampler:
+  num_steps: 50
+
+guidance:
+  cfg:
+    scale: 7.0
+    t_min: 0.0
+    t_max: 0.9
+
+dataset:
+  target: 'imagenet'
+  type: 'hf'
+  data_dir: "./data/imagenet"
+  split: "train"
+  condition_type: "label"
+  shared_tmpdir: "~/tmp"
+
+training:
+  epochs: 80
+  global_batch_size: 1024
+  grad_accum_steps: 1
+  ema_decay: 0.9995
+  num_workers: 4
+  log_interval: 100
+  checkpoint_interval: 5
+  sample_every: 25000
+  clip_grad: 1.0
+  global_seed: 42
+  optimizer:
+    lr: 2.0e-4
+    betas: [0.9, 0.95]
+    weight_decay: 0.0
+  scheduler:
+    type: linear
+    warmup_epochs: 40
+    decay_end_epoch: 800
+    base_lr: 2.0e-4
+    final_lr: 2.0e-5
+    warmup_from_zero: false
+  image_size: 256
+
+eval:
+  eval_interval: 25000
+  eval_model: false
+  eval_dir: "results/evals/stage2/sampling/in1k-rae"
+  datasets:
+    imagenet:
+      type: 'hf'
+      data_dir: './data/imagenet'
+      split: 'val'
+      condition_type: 'label'
+      reference_npz: './data/imagenet/jit_in256_stats.npz'
+      metrics: ['fid', 'inception_score']
+
+misc:
+  latent_size: [768, 16, 16]
+  num_classes: 1000
+  time_dist_shift_dim: 196608
+  time_dist_shift_base: 4096

@@ -1,0 +1,27 @@
+# Template: copy to experiments/<user>/jobs/stage1-eval/configs/{name}.yaml
+# Replace all FIXME values below (FIXME_USER = your username, e.g. "xj").
+
+stage_1:
+  target: stage1.VAE              # FIXME: stage1.VAE or stage1.MyCustomVAE
+  params:
+    vae_type: "FIXME"             # FIXME: key in VAE_CONFIGS dict
+    resolution: 256
+
+training:
+  global_batch_size: 512
+  image_size: 256
+  num_workers: 8
+
+dataset:
+  shared_tmpdir: "~/tmp"
+
+eval:
+  eval_dir: "experiments/FIXME_USER/evals/stage1/offline-eval"
+  datasets:
+    imagenet:
+      type: 'hf'
+      data_dir: './data/imagenet'
+      split: 'val'
+      condition_type: 'label'
+      reference_npz: './data/imagenet/imagenet-256-val.npz'
+      metrics: ['psnr', 'ssim', 'lpips', 'rfid']
