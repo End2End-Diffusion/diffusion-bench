@@ -49,7 +49,7 @@ dataset:
   shared_tmpdir: "~/tmp"
 
 training:
-  epochs: 15
+  epochs: 10
   global_batch_size: 1024
   grad_accum_steps: 1
   ema_decay: 0.9995
