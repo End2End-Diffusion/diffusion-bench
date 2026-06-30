@@ -26,12 +26,16 @@ DATASETS = {
     "geneval": ("diffusion-bench/geneval", "geneval"),
     "dpgbench": ("diffusion-bench/dpgbench", "dpgbench"),
     "genaibench": ("diffusion-bench/genaibench", "genaibench"),
+    "blip3o-original-lc": ("BLIP3o/BLIP3o-Pretrain-Long-Caption", "blip3o/long-caption"),
+    "blip3o-original-sc": ("BLIP3o/BLIP3o-Pretrain-Short-Caption", "blip3o/short-caption"),
+    "blip3o-original-jdb": ("BLIP3o/BLIP3o-Pretrain-JourneyDB", "blip3o/journeydb"),
 }
 
 GROUPS = {
     "imagenet": ["imagenet"],
     "t2i": ["blip3o-256"],
     "eval": ["coco-30k", "mjhq-30k", "geneval", "dpgbench", "genaibench"],
+    "t2i-res512": ["blip3o-original-lc", "blip3o-original-sc", "blip3o-original-jdb"],
     "all": list(DATASETS.keys()),
 }
 
