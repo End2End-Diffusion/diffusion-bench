@@ -92,6 +92,7 @@ class BLIP3OWebDataset:
             # use as few augmentations as possible
             self.transform = transforms.Compose([
                 transforms.Resize(image_size, interpolation=transforms.InterpolationMode.BICUBIC),
+                transforms.CenterCrop(image_size),
                 transforms.ToTensor(),
             ])
 

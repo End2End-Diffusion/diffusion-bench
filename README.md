@@ -28,6 +28,8 @@
 
 ## News
 
+> 🎉 **New: 512-res T2I checkpoints.** We've released pretrained 512×512 T2I models on three VAEs: `Qwen-Image-VAE`, `E2E-Qwen-Image-VAE`, and `FLUX.2-VAE`; trained at batch size 1024 for 10 epochs on BLIP3o (pretrained-only, no SFT). The checkpoints and training logs are on [HuggingFace](https://huggingface.co/diffusion-bench), and their `training/` + `sampling/` configs are now in the repo; prepare the data with `scripts/prepare.py --data t2i-res512`.
+
 > We have released a very **preliminary** technical report for DiffusionBench v0.1! We plan to update it heavily going forward, add new contributors/authors, and work with the community to make DiffusionBench more robust and better. Please join us!
 >
 > Please refer to [`docs/contributors.md`](docs/contributors.md) and [`docs/contributing.md`](docs/contributing.md) for further details.
@@ -52,7 +54,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 
 # prepare data
-uv run python scripts/prepare.py --data {all,imagenet,t2i,eval}
+uv run python scripts/prepare.py --data {all,imagenet,t2i,t2i-res512,eval}
 
 # download pretrained models
 uv run hf download diffusion-bench/diffusion-bench --local-dir pretrained_models --exclude .gitattributes

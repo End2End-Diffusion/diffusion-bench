@@ -1,0 +1,103 @@
+stage_1:
+  target: stage1.QwenVAE
+  params:
+    vae_type: "qwen-vae"
+    resolution: 512
+
+stage_2:
+  target: stage2.models.DDT.DiTwDDTHead
+  params:
+    input_size: 64
+    patch_size: [2, 2]
+    in_channels: 16
+    hidden_size: [1584, 2048]
+    depth: [28, 2]
+    num_heads: [22, 16]
+    mlp_ratio: 4.0
+
+conditioning:
+  type: "text"
+  cfg_dropout_prob: 0.1
+  text_encoder:
+    model_name: "Qwen/Qwen3-0.6B"
+    max_length: 256
+  arch:
+      num_t_tokens: 4
+
+transport:
+  prediction: 'velocity'
+  time_dist_type: 'logit-normal_0_1'
+
+sampler:
+  num_steps: 50
+
+guidance:
+  cfg:
+    scale: 6.0
+    t_min: 0.0
+    t_max: 1.0
+
+dataset:
+  target: 'blip3o'
+  type: 'wds'
+  data_dir: "./data/blip3o"
+  split: ["journeydb", "long-caption", "short-caption"]
+  condition_type: "text"
+  shuffle_buffer: 10000
+  seed: 42
+  shared_tmpdir: "~/tmp"
+
+training:
+  epochs: 10
+  global_batch_size: 1024
+  grad_accum_steps: 1
+  ema_decay: 0.9995
+  num_workers: 4
+  virtual_epoch_steps: 10000
+  log_interval: 100
+  checkpoint_interval: 1
+  sample_every: 10000
+  clip_grad: 1.0
+  global_seed: 42
+  optimizer:
+    lr: 2.0e-4
+    betas: [0.9, 0.95]
+    weight_decay: 0.0
+  scheduler:
+    type: linear
+    warmup_epochs: 5
+    decay_end_epoch: 100
+    base_lr: 2.0e-4
+    final_lr: 2.0e-5
+    warmup_from_zero: false
+  image_size: 512
+
+eval:
+  eval_interval: 10000
+  eval_model: false
+  eval_dir: "results/evals/stage2/training/t2i-vae"
+  datasets:
+    geneval:
+      type: 'hf'
+      data_dir: './data'
+      split: 'val'
+      condition_type: 'text'
+      metrics: ['geneval']
+    dpgbench:
+      type: 'hf'
+      data_dir: './data'
+      split: 'val'
+      condition_type: 'text'
+      metrics: ['dpgbench']
+    genaibench:
+      type: 'hf'
+      data_dir: './data'
+      split: 'val'
+      condition_type: 'text'
+      metrics: ['vqascore_clip-flant5-xxl']
+
+misc:
+  latent_size: [16, 64, 64]
+  num_classes: 1000
+  time_dist_shift_dim: 65536
+  time_dist_shift_base: 4096
