@@ -1,5 +1,6 @@
 
 import os
+from datetime import timedelta
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
@@ -10,7 +11,7 @@ def setup_distributed() -> Tuple[int, int, torch.device]:
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
-        dist.init_process_group(backend="nccl")
+        dist.init_process_group(backend="nccl", timeout=timedelta(minutes=60))
         local_rank = int(os.environ.get("LOCAL_RANK", rank % torch.cuda.device_count()))
         torch.cuda.set_device(local_rank)
         device = torch.device("cuda", local_rank)
