@@ -54,9 +54,9 @@ environments = [
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu128" }]
 gram-newton-schulz = { git = "https://github.com/nanovisionx/gmuon.git", branch = "main" }
-dpg-evaluator              = { git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "dpgbench",         branch = "main" }
-geneval-evaluator          = { git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "geneval",          branch = "main" }
-t2v-metrics                = { git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "t2v_metrics",      branch = "main" }
+dpg-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "dpgbench", branch = "main" }
+geneval-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "geneval", branch = "main" }
+t2v-metrics = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "t2v_metrics", branch = "main" }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
