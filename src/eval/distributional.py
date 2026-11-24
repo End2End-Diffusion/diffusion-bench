@@ -5,7 +5,7 @@ combined uint8 NHWC array. Same callsite shape as the existing FID block in
 generation.py -- this just delegates to the fd_evaluator package for
 gfid/fdr6/mind6/fdr_<ext>/mind_<ext> metric strings.
 
-Defaults follow nanogen conventions:
+Defaults:
   - feature cache:           ~/.cache/nanogen-evals/features/
                              (overridable via NANOGEN_EVALS_CACHE_DIR)
   - MIND raw-image reference: <data_dir>/imagenet-256-val.npz

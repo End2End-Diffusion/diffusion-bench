@@ -1,17 +1,14 @@
 # Setup Troubleshooting
 
-## `403` / `Permission denied` on git clone during `uv sync`
+## git clone fails during `uv sync`
 
-Private G-REPA deps use SSH URLs (`ssh://git@github.com/G-REPA/...`).
+Evaluator packages are fetched over HTTPS from the public `End2End-Diffusion/diffusionbench-evals` repo.
 
-**Diagnosis:** `ssh -T git@github.com` — should print "Hi <username>!"
+**Diagnosis:** `git ls-remote https://github.com/End2End-Diffusion/diffusionbench-evals.git`
 
 **Fixes:**
-- Add SSH key to GitHub account with G-REPA org access
-- If only HTTPS token works, set global git rewrite:
-  ```sh
-  git config --global url."git@github.com:".insteadOf "https://github.com/"
-  ```
+- Check network / proxy access to github.com
+- Check for a global git rewrite forcing SSH (`git config --global --get-regexp insteadof`) and remove it if you have no SSH key set up
 
 ## `No solution found` / torch version errors
 
@@ -36,9 +33,8 @@ export UV_LINK_MODE=copy
 rm -rf .venv uv.lock && uv sync
 ```
 
-## Private package import errors after install
+## Evaluator import errors after install
 
-If `dpg_evaluator`, `geneval_evaluator`, or `t2v_metrics` fail to import:
-1. Check they appear in `uv pip list | grep -E "dpg|geneval|t2v"`
-2. If missing, SSH access likely failed silently — check `ssh -T git@github.com`
-3. Re-run `uv sync` and watch for git errors in output
+If an evaluator package (e.g. `dpg_evaluator`, `geneval_evaluator`, `t2v_metrics`) fails to import:
+1. Check it appears in `uv pip list | grep -iE "evaluator|t2v"`
+2. Re-run `uv sync` and watch for git errors in output
