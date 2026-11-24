@@ -34,6 +34,9 @@ dependencies = [
   "dpg-evaluator",
   "geneval-evaluator",
   "t2v-metrics",
+  "geneval2-evaluator",
+  "prism-bench-evaluator",
+  "qwen-image-bench-evaluator",
 ]
 
 [dependency-groups]
@@ -53,10 +56,14 @@ environments = [
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
 gram-newton-schulz = { git = "https://github.com/nanovisionx/gmuon.git", branch = "main" }
 dpg-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "dpgbench", branch = "main" }
 geneval-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "geneval", branch = "main" }
 t2v-metrics = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "t2v_metrics", branch = "main" }
+geneval2-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "geneval2", branch = "main" }
+prism-bench-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "prism_bench", branch = "main" }
+qwen-image-bench-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "qwen-image-bench", branch = "main" }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
