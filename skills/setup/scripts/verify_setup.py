@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Verify nanogen environment setup."""
+"""Verify diffusion-bench environment setup."""
 
-import subprocess
 import sys
 import shutil
 
@@ -15,7 +14,7 @@ def check(label, ok, fix=""):
 
 
 def main():
-    print("nanogen setup verification\n")
+    print("diffusion-bench setup verification\n")
     all_ok = True
 
     # 1. Python version
@@ -33,19 +32,7 @@ def main():
         "curl -LsSf https://astral.sh/uv/install.sh | sh"
     )
 
-    # 3. SSH access to GitHub
-    result = subprocess.run(
-        ["ssh", "-T", "-o", "StrictHostKeyChecking=no", "git@github.com"],
-        capture_output=True, text=True, timeout=10
-    )
-    ssh_out = result.stdout + result.stderr
-    ok = "successfully authenticated" in ssh_out.lower()
-    all_ok &= check(
-        "SSH access to GitHub", ok,
-        "Add SSH key to GitHub: https://github.com/settings/keys"
-    )
-
-    # 4. torch import + version
+    # 3. torch import + version
     try:
         import torch
         ok = torch.__version__.startswith("2.10.0")
@@ -57,8 +44,11 @@ def main():
     except ImportError:
         all_ok &= check("torch not installed", False, "Run: uv sync")
 
-    # 5. Private packages
-    for pkg in ["dpg_evaluator", "geneval_evaluator", "t2v_metrics"]:
+    # 4. Evaluator packages
+    for pkg in [
+        "dpg_evaluator", "geneval_evaluator", "geneval2_evaluator",
+        "prism_bench_evaluator", "qwen_image_bench_evaluator", "t2v_metrics",
+    ]:
         try:
             __import__(pkg)
             all_ok &= check(f"{pkg} installed", True)

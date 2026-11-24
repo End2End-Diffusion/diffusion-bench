@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Download and prepare datasets for nanogen training and evaluation.
+Download and prepare datasets for diffusion-bench training and evaluation.
 
 Usage:
     uv run python scripts/prepare.py --data all
@@ -53,7 +53,7 @@ def download_dataset(name: str, data_dir: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download and prepare nanogen datasets")
+    parser = argparse.ArgumentParser(description="Download and prepare diffusion-bench datasets")
     parser.add_argument(
         "--data",
         type=str,
