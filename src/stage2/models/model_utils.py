@@ -177,3 +177,7 @@ class ConditionEmbedder(nn.Module):
         if hasattr(self, "refiner"):
             return self.refiner(y, attn_mask)
         return self.proj(self.norm(y))
+
+
+def modulate(x, shift, scale):
+    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
