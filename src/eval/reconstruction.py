@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from .ref_iqa import calculate_psnr, calculate_ssim, calculate_lpips
 from .fid import calculate_rfid
-from .distributed import setup_eval_tmpdir, create_eval_dataloader, gather_and_cleanup_shards
+from .distributed import create_eval_dataloader, gather_to_rank0
 
 
 def compute_reconstruction_metrics(
@@ -89,13 +89,13 @@ def evaluate_reconstruction_distributed(
         metric_batch_size: Batch size for metric computation (on rank 0)
         reference_npz_path: Optional path to existing reference NPZ file
         metrics_to_compute: Which metrics to compute
-        shared_tmpdir: Optional shared directory for multi-node eval
+        shared_tmpdir: Unused (kept for config compatibility); samples are gathered over NCCL
 
     Returns:
         Dictionary of metrics (only on rank 0, None on other ranks)
     """
-    temp_dir = setup_eval_tmpdir(experiment_dir, global_step, rank,
-                                  shared_tmpdir=shared_tmpdir, eval_type="reconstruction")
+    if rank == 0:
+        print(f"\n[Eval] Starting distributed reconstruction evaluation at step {global_step}")
     loader = create_eval_dataloader(val_dataset, rank, world_size, num_samples, batch_size)
 
     # Reconstruct images on this rank
@@ -115,19 +115,16 @@ def evaluate_reconstruction_distributed(
                 reconstructions.append(img)
 
     reconstructions = np.stack(reconstructions)
-    shard_path = os.path.join(temp_dir, f"recon_{global_step:07d}_{rank:02d}.npz")
-    np.savez(shard_path, arr_0=reconstructions)
-
-    if rank == 0:
-        print(f"[Rank {rank}] Saved {len(reconstructions)} reconstructions to {shard_path}")
 
     # Wait for all ranks to finish reconstruction
     dist.barrier()
 
+    # Gather every reconstruction to rank 0 over NCCL (collective, so all ranks call it).
+    combined_recons = gather_to_rank0(reconstructions, rank, world_size, device, num_samples)
+
     # Rank 0 computes metrics
     metrics = None
     if rank == 0:
-        combined_recons = gather_and_cleanup_shards(temp_dir, "recon", global_step, world_size, num_samples)
         print(f"[Eval] Combined reconstruction NPZ shape: {combined_recons.shape}")
 
         ref_npz_path = reference_npz_path
