@@ -725,7 +725,7 @@ wheels = [
 [[package]]
 name = "dpg-evaluator"
 version = "0.1.0"
-source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=dpgbench&branch=main#581ee84cc6c561aa5ab9d3f020e1681db3ee50fe" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=dpgbench&branch=main#bb218e83403cfaca690a3b31da27549b93c8e66e" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'linux'" },
@@ -895,7 +895,7 @@ http = [
 [[package]]
 name = "geneval-evaluator"
 version = "0.1.0"
-source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval&branch=main#581ee84cc6c561aa5ab9d3f020e1681db3ee50fe" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval&branch=main#bb218e83403cfaca690a3b31da27549b93c8e66e" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'linux'" },
@@ -908,7 +908,7 @@ dependencies = [
 [[package]]
 name = "geneval2-evaluator"
 version = "0.1.0"
-source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval2&branch=main#581ee84cc6c561aa5ab9d3f020e1681db3ee50fe" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval2&branch=main#bb218e83403cfaca690a3b31da27549b93c8e66e" }
 dependencies = [
     { name = "accelerate", marker = "sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'linux'" },
@@ -2198,7 +2198,7 @@ wheels = [
 [[package]]
 name = "prism-bench-evaluator"
 version = "0.1.0"
-source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=prism_bench&branch=main#581ee84cc6c561aa5ab9d3f020e1681db3ee50fe" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=prism_bench&branch=main#bb218e83403cfaca690a3b31da27549b93c8e66e" }
 dependencies = [
     { name = "accelerate", marker = "sys_platform == 'linux'" },
     { name = "demjson3", marker = "sys_platform == 'linux'" },
@@ -2579,7 +2579,7 @@ wheels = [
 [[package]]
 name = "qwen-image-bench-evaluator"
 version = "0.1.0"
-source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=qwen-image-bench&branch=main#581ee84cc6c561aa5ab9d3f020e1681db3ee50fe" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=qwen-image-bench&branch=main#bb218e83403cfaca690a3b31da27549b93c8e66e" }
 dependencies = [
     { name = "accelerate", marker = "sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'linux'" },
@@ -3018,7 +3018,7 @@ wheels = [
 [[package]]
 name = "t2v-metrics"
 version = "0.1.0"
-source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=t2v_metrics&branch=main#581ee84cc6c561aa5ab9d3f020e1681db3ee50fe" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=t2v_metrics&branch=main#bb218e83403cfaca690a3b31da27549b93c8e66e" }
 dependencies = [
     { name = "accelerate", marker = "sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'linux'" },
