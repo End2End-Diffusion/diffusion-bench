@@ -12,7 +12,7 @@ from torch.cuda.amp import autocast
 from tqdm import tqdm
 
 from .clipscore import CLIPScoreEvaluator
-from .distributed import create_eval_dataloader, gather_and_cleanup_shards, setup_eval_tmpdir
+from .distributed import create_eval_dataloader, gather_to_rank0
 from .distributional import compute_distributional_metrics, filter_distributional
 from .dpgbench import DPGEvaluator
 from .fid import calculate_gfid
@@ -164,7 +164,7 @@ def evaluate_generation_distributed(
         autocast_kwargs: Autocast configuration
         metric_batch_size: Batch size for metric computation (on rank 0)
         reference_npz_path: Optional path to existing reference NPZ file
-        shared_tmpdir: Optional shared directory for multi-node eval
+        shared_tmpdir: Unused (kept for config compatibility); samples are gathered over NCCL
         condition_type: Type of conditioning - "label" or "text"
         null_label: Null label index for CFG (label conditioning only)
         text_encoder: Text encoder for text conditioning (required if condition_type="text")
@@ -173,8 +173,8 @@ def evaluate_generation_distributed(
     Returns:
         Dictionary of metrics (only on rank 0, None on other ranks)
     """
-    temp_dir = setup_eval_tmpdir(experiment_dir, global_step, rank,
-                                  shared_tmpdir=shared_tmpdir, eval_type="sampling")
+    if rank == 0:
+        print(f"\n[Eval] Starting distributed sampling evaluation at step {global_step}")
     loader = create_eval_dataloader(val_dataset, rank, world_size, num_samples, batch_size)
 
     # Initialize evaluators
@@ -254,11 +254,6 @@ def evaluate_generation_distributed(
                 generations.append(img)
 
     generations = np.stack(generations)
-    shard_path = os.path.join(temp_dir, f"gen_{global_step:07d}_{rank:02d}.npz")
-    np.savez(shard_path, arr_0=generations)
-
-    if rank == 0:
-        print(f"[Rank {rank}] Saved {len(generations)} generation to {shard_path}")
 
     # Wait for all ranks to finish generation
     dist.barrier()
@@ -266,16 +261,20 @@ def evaluate_generation_distributed(
     # Distributed metrics: all_reduce sum and count across all ranks
     metrics = _aggregate_distributed_metrics(local_scores, device)
 
-    # Rank 0 computes FID (requires gathering all samples)
+    # FID etc. need every sample on rank 0: gather over NCCL (collective, so all ranks call it).
+    distributional = filter_distributional(metrics_to_compute)
+    need_combined = (
+        'fid' in metrics_to_compute
+        or 'inception_score' in metrics_to_compute
+        or bool(distributional)
+    )
+    combined_recons = (
+        gather_to_rank0(generations, rank, world_size, device, num_samples) if need_combined else None
+    )
+
+    # Rank 0 computes FID
     if rank == 0:
-        distributional = filter_distributional(metrics_to_compute)
-        need_combined = (
-            'fid' in metrics_to_compute
-            or 'inception_score' in metrics_to_compute
-            or bool(distributional)
-        )
         if need_combined:
-            combined_recons = gather_and_cleanup_shards(temp_dir, "gen", global_step, world_size, num_samples)
             print(f"[Eval] Combined generation NPZ shape: {combined_recons.shape}")
 
             if 'fid' in metrics_to_compute or 'inception_score' in metrics_to_compute:
@@ -294,12 +293,6 @@ def evaluate_generation_distributed(
             if fd_metrics:
                 metrics.update(compute_distributional_metrics(
                     combined_recons, fd_metrics, device=device, batch_size=metric_batch_size))
-        else:
-            # Still need to clean up shards even if not computing combined metrics
-            for r in range(world_size):
-                shard_file = os.path.join(temp_dir, f"gen_{global_step:07d}_{r:02d}.npz")
-                if os.path.exists(shard_file):
-                    os.remove(shard_file)
 
         # Print results
         print(f"[Eval] Step {global_step} Metrics:")

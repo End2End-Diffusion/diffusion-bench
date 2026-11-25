@@ -1,35 +1,11 @@
-"""Shared distributed eval infrastructure (temp dirs, sharding, shard gather)."""
+"""Shared distributed eval infrastructure (sharding, NCCL gather to rank 0)."""
 
-import os
 from typing import Optional
 
 import numpy as np
+import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader, Subset
-
-
-def setup_eval_tmpdir(experiment_dir: str, global_step: int, rank: int,
-                      *, shared_tmpdir: Optional[str] = None, eval_type: str = "sampling") -> str:
-    """Create temp directory for NPZ shards. Returns the temp_dir path."""
-    if shared_tmpdir:
-        results_dir = os.path.basename(os.path.dirname(experiment_dir))
-        experiment_name = os.path.basename(experiment_dir)
-        temp_dir = os.path.join(
-            os.path.expanduser(shared_tmpdir),
-            results_dir,
-            experiment_name,
-            "eval_npzs",
-        )
-    else:
-        temp_dir = os.path.join(experiment_dir, "eval_npzs")
-
-    if rank == 0:
-        print(f"\n[Eval] Starting distributed {eval_type} evaluation at step {global_step}")
-        os.makedirs(temp_dir, exist_ok=True)
-
-    # Wait for rank 0 to create the directory before other ranks try to save
-    dist.barrier()
-    return temp_dir
 
 
 def create_eval_dataloader(dataset, rank: int, world_size: int,
@@ -58,21 +34,31 @@ def create_eval_dataloader(dataset, rank: int, world_size: int,
     )
 
 
-def gather_and_cleanup_shards(temp_dir: str, prefix: str, global_step: int,
-                              world_size: int, num_samples: int) -> np.ndarray:
-    """Rank-0 only: load all NPZ shards, concatenate, truncate to num_samples, and delete shards."""
-    all_arrays = []
-    for r in range(world_size):
-        shard_file = os.path.join(temp_dir, f"{prefix}_{global_step:07d}_{r:02d}.npz")
-        shard_data = np.load(shard_file)["arr_0"]
-        all_arrays.append(shard_data)
+def gather_to_rank0(local: np.ndarray, rank: int, world_size: int, device,
+                    num_samples: int, chunk: int = 256) -> Optional[np.ndarray]:
+    """Collective: gather every rank's uint8 array to rank 0 over NCCL (no shared disk).
 
-    combined = np.concatenate(all_arrays, axis=0)[:num_samples]
-
-    # Cleanup shards
-    for r in range(world_size):
-        shard_file = os.path.join(temp_dir, f"{prefix}_{global_step:07d}_{r:02d}.npz")
-        if os.path.exists(shard_file):
-            os.remove(shard_file)
-
-    return combined
+    Returns rank-major concatenation truncated to num_samples on rank 0, None elsewhere.
+    Ranks may hold different counts; data moves in `chunk`-sized pieces to bound GPU memory.
+    """
+    n = torch.tensor([len(local)], device=device)
+    sizes = [torch.zeros_like(n) for _ in range(world_size)]
+    dist.all_gather(sizes, n)
+    sizes = [int(s) for s in sizes]
+    parts = [[] for _ in range(world_size)]
+    for start in range(0, max(sizes), chunk):
+        end = min(start + chunk, max(sizes))
+        buf = torch.zeros((end - start, *local.shape[1:]), dtype=torch.uint8, device=device)
+        k = max(0, min(end, len(local)) - start)
+        if k:
+            buf[:k] = torch.from_numpy(local[start:start + k]).to(device)
+        bufs = [torch.empty_like(buf) for _ in range(world_size)] if rank == 0 else None
+        dist.gather(buf, bufs, dst=0)
+        if rank == 0:
+            for r in range(world_size):
+                kr = max(0, min(end, sizes[r]) - start)
+                if kr:
+                    parts[r].append(bufs[r][:kr].cpu().numpy())
+    if rank != 0:
+        return None
+    return np.concatenate([p for rank_parts in parts for p in rank_parts], axis=0)[:num_samples]
