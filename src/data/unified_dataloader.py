@@ -11,7 +11,10 @@ from torchvision import transforms
 
 from .imagenet_hf_dataset import ImageNetHFDataset
 
-T2I_HF_DATASETS = {'mscoco', 'mjhq', 'geneval', 'dpgbench', 'genaibench', 'sft_hack_datasets'}
+T2I_HF_DATASETS = {
+    'mscoco', 'mjhq', 'geneval', 'geneval2', 'dpgbench', 'genaibench', 'prism_bench',
+    'qwen-image-bench', 'sft_hack_datasets',
+}
 
 
 @dataclass

@@ -5,6 +5,9 @@ from .fid import calculate_rfid, calculate_gfid
 from .clipscore import CLIPScoreEvaluator
 from .vqascore import VQAScoreEvaluator
 from .geneval import GenEvalEvaluator
+from .geneval2 import GenEval2Evaluator
+from .prism_bench import PrismBenchEvaluator
+from .qwen_image_bench import QwenImageBenchEvaluator
 from .dpgbench import DPGEvaluator
 
 from .reconstruction import compute_reconstruction_metrics, evaluate_reconstruction_distributed
@@ -32,7 +35,8 @@ __all__ = [
     # fid
     "calculate_rfid", "calculate_gfid",
     # evaluators
-    "CLIPScoreEvaluator", "VQAScoreEvaluator", "GenEvalEvaluator", "DPGEvaluator",
+    "CLIPScoreEvaluator", "VQAScoreEvaluator", "GenEvalEvaluator", "GenEval2Evaluator", "DPGEvaluator",
+    "PrismBenchEvaluator", "QwenImageBenchEvaluator",
     # reconstruction
     "compute_reconstruction_metrics", "evaluate_reconstruction_distributed",
     # generation
