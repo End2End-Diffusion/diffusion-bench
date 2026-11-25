@@ -82,6 +82,7 @@ class DiTwDDTHead(nn.Module):
         context_dim=768,
         cond_arch=None,
         is_meanflow=False,
+        refiner_cfg=None,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -104,7 +105,7 @@ class DiTwDDTHead(nn.Module):
         if is_meanflow:
             self.t_abs_embedder = GaussianFourierEmbedding(self.enc_hidden_size, cond_arch.num_t_tokens)
         self.ctx_embedder = ConditionEmbedder(
-            self.enc_hidden_size, num_classes, context_dim, condition_type, cond_arch.num_c_tokens
+            self.enc_hidden_size, num_classes, context_dim, condition_type, cond_arch.num_c_tokens, refiner_cfg
         )
 
         self.blocks = []
@@ -181,7 +182,7 @@ class DiTwDDTHead(nn.Module):
         seq.append(t_emb)
         if self.is_meanflow:
             seq.append(self.t_abs_embedder(condition_kwargs["t_abs"]))
-        seq.append(self.ctx_embedder(condition_kwargs["context"]))
+        seq.append(self.ctx_embedder(condition_kwargs["context"], condition_kwargs.get("attn_mask")))
         seq = torch.cat(seq, dim=1)
         return seq, t_emb_base
 

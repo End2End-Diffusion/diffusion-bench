@@ -134,10 +134,20 @@ class TextEncoderConfig:
 
 
 @dataclass
+class TextRefinerConfig:
+    """Trainable fusion of stacked text-encoder layers (see TextRefiner)."""
+    enable: bool = False
+    num_layerwise_blocks: int = 2
+    num_refiner_blocks: int = 2
+    num_text_layers: int = 0  # set at runtime from text_encoder.layers
+
+
+@dataclass
 class ConditioningConfig:
     """Conditioning configuration for ImageNet and T2I"""
     type: str = "label"
     text_encoder: TextEncoderConfig = field(default_factory=TextEncoderConfig)
+    refiner: TextRefinerConfig = field(default_factory=TextRefinerConfig)
     cfg_dropout_prob: float = 0.1
     context_dim: Optional[int] = None  # initialized later in train.py
     arch: ConditioningArchConfig = field(default_factory=ConditioningArchConfig)
@@ -205,6 +215,8 @@ class Stage2Config:
 
         # Conditioning architecture
         params.setdefault('cond_arch', self.conditioning.arch)
+        if self.conditioning.type == "text" and self.conditioning.refiner.enable:
+            params.setdefault('refiner_cfg', self.conditioning.refiner)
 
         # MeanFlow conditions on two times (t, t-r) via a second time embedder
         if self.transport.meanflow is not None:

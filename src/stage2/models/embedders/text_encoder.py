@@ -22,7 +22,7 @@ def select_layers(spec, num_hidden_states):
 
 class TextEncoder(nn.Module):
     def __init__(self, model_name="Qwen/Qwen3-0.6B", max_length=256,
-                 layers="-1", feature_norm="raw", system_prompt=""):
+                 layers="-1", feature_norm="raw", system_prompt="", stack_layers=False):
         super().__init__()
         if feature_norm not in ("raw", "ln"):
             raise ValueError(f"feature_norm must be 'raw' or 'ln', got '{feature_norm}'.")
@@ -30,6 +30,7 @@ class TextEncoder(nn.Module):
         self.max_length = max_length
         self.feature_norm = feature_norm
         self.system_prompt = system_prompt
+        self.stack_layers = stack_layers
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.text_model = AutoModelForCausalLM.from_pretrained(model_name).eval()
@@ -63,6 +64,6 @@ class TextEncoder(nn.Module):
         if self.feature_norm == "ln":
             hs = F.layer_norm(hs, (hs.shape[-1],))
         return {
-            "tokens": hs.mean(dim=2),  # average the selected layers
+            "tokens": hs if self.stack_layers else hs.mean(dim=2),  # [B, T, L, D] for the refiner
             "attention_mask": tokens["attention_mask"],
         }

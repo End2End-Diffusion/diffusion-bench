@@ -108,8 +108,53 @@ class GaussianFourierEmbedding(nn.Module):
             return self.learnable_tokens + t_embed.unsqueeze(1)
 
 
+class RefinerBlock(nn.Module):
+    def __init__(self, dim, mlp_ratio=4.0):
+        super().__init__()
+        self.norm1 = RMSNorm(dim)
+        self.norm2 = RMSNorm(dim)
+        self.attn = NormAttention(dim, dim // 128)
+        self.mlp = SwiGLUFFN(dim, int(2 / 3 * dim * mlp_ratio))
+        self.rope = nn.Identity()  # no positional encoding inside the refiner
+        # zero-init residual branches: each block starts as identity
+        for layer in (self.attn.proj, self.mlp.w3):
+            nn.init.zeros_(layer.weight)
+            nn.init.zeros_(layer.bias)
+
+    def forward(self, x, attn_mask=None):
+        x = x + self.attn(self.norm1(x), rope=self.rope, attn_mask=attn_mask)
+        return x + self.mlp(self.norm2(x))
+
+
+class TextRefiner(nn.Module):
+    """[B, T, L, D] text features -> attention across layers -> learned layer collapse
+    -> attention across tokens -> [B, T, H]. Starts as mean over layers + projection."""
+    def __init__(self, context_dim, hidden_size, n_tokens, num_text_layers, num_layerwise_blocks=2, num_refiner_blocks=2):
+        super().__init__()
+        self.layerwise_blocks = nn.ModuleList([RefinerBlock(context_dim) for _ in range(num_layerwise_blocks)])
+        self.projector = nn.Linear(num_text_layers, 1, bias=False)
+        nn.init.constant_(self.projector.weight, 1.0 / num_text_layers)
+        self.norm = RMSNorm(context_dim)
+        self.proj = nn.Linear(context_dim, hidden_size)
+        self.pos_emb = nn.Parameter(torch.zeros(1, n_tokens, hidden_size))
+        self.refiner_blocks = nn.ModuleList([RefinerBlock(hidden_size) for _ in range(num_refiner_blocks)])
+
+    def forward(self, y, attn_mask=None):
+        B, T, L, D = y.shape
+        x = y.reshape(B * T, L, D)
+        for blk in self.layerwise_blocks:
+            x = blk(x)
+        x = self.projector(x.reshape(B, T, L, D).transpose(2, 3)).squeeze(-1)
+        x = self.proj(self.norm(x)) + self.pos_emb[:, :T]
+        if attn_mask is not None:
+            attn_mask = (1.0 - attn_mask[:, None, None, :].to(x.dtype)) * torch.finfo(x.dtype).min
+        for blk in self.refiner_blocks:
+            x = blk(x, attn_mask)
+        return x
+
+
 class ConditionEmbedder(nn.Module):
-    def __init__(self, hidden_size, num_classes=1000, context_dim=768, condition_type="label", n_tokens=8):
+    def __init__(self, hidden_size, num_classes=1000, context_dim=768, condition_type="label", n_tokens=8, refiner_cfg=None):
         super().__init__()
         self.condition_type = condition_type
         self.hidden_size = hidden_size
@@ -117,14 +162,18 @@ class ConditionEmbedder(nn.Module):
         if condition_type == "label":
             self.embedding_table = nn.Embedding(num_classes + 1, hidden_size)
             self.learnable_tokens = nn.Parameter(torch.normal(0, 1 / hidden_size**0.5, (n_tokens, hidden_size)))
+        elif condition_type == "text" and refiner_cfg is not None:
+            self.refiner = TextRefiner(context_dim, hidden_size, n_tokens, refiner_cfg.num_text_layers,
+                                       refiner_cfg.num_layerwise_blocks, refiner_cfg.num_refiner_blocks)
         elif condition_type == "text":
             self.norm = RMSNorm(context_dim)
             self.proj = nn.Linear(context_dim, hidden_size)
         else:
             raise ValueError(f"Unknown condition_type: {condition_type}")
 
-    def forward(self, y: torch.Tensor) -> torch.Tensor:
+    def forward(self, y, attn_mask=None):
         if self.condition_type == "label":
             return self.learnable_tokens + self.embedding_table(y).unsqueeze(1)
-        else:
-            return self.proj(self.norm(y))
+        if hasattr(self, "refiner"):
+            return self.refiner(y, attn_mask)
+        return self.proj(self.norm(y))
