@@ -128,6 +128,9 @@ class TextEncoderConfig:
     """Text encoder configuration."""
     model_name: str = "Qwen/Qwen3-0.6B"
     max_length: int = 256
+    layers: str = "-1"          # hidden states to average: "-1", "all", "4:-1", "4,8,12"
+    feature_norm: str = "raw"   # "ln": parameter-free LayerNorm on each layer before averaging
+    system_prompt: str = ""     # prepended to every prompt
 
 
 @dataclass
