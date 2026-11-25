@@ -634,9 +634,9 @@ requires-dist = [
     { name = "datasets", specifier = "==4.4.2" },
     { name = "dictdot", specifier = "==1.5.1" },
     { name = "diffusers", specifier = "==0.36.0" },
-    { name = "dpg-evaluator", git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=dpgbench&branch=main" },
+    { name = "dpg-evaluator", git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=dpgbench&branch=paper-impl" },
     { name = "einops", specifier = "==0.8.1" },
-    { name = "geneval-evaluator", git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval&branch=main" },
+    { name = "geneval-evaluator", git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval&branch=paper-impl" },
     { name = "gram-newton-schulz", git = "https://github.com/nanovisionx/gmuon.git?branch=main" },
     { name = "numpy", specifier = "==2.2.6" },
     { name = "omegaconf", specifier = "==2.3.0" },
@@ -648,14 +648,14 @@ requires-dist = [
     { name = "safetensors", specifier = "==0.7.0" },
     { name = "scipy", specifier = "==1.15.3" },
     { name = "sentencepiece", specifier = "==0.2.1" },
-    { name = "t2v-metrics", git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=t2v_metrics&branch=main" },
+    { name = "t2v-metrics", git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=t2v_metrics&branch=paper-impl" },
     { name = "tabulate", specifier = "==0.10.0" },
     { name = "termcolor" },
     { name = "timm", specifier = "==1.0.16" },
     { name = "torch", specifier = "==2.10.0+cu128", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torch-fidelity", specifier = "==0.3.0" },
     { name = "torchmetrics", specifier = "==1.8.2" },
-    { name = "torchvision", specifier = "==0.25.0" },
+    { name = "torchvision", specifier = "==0.25.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "tqdm", specifier = "==4.67.1" },
     { name = "transformers", specifier = "==5.3.0" },
     { name = "wandb", specifier = "==0.23.1" },
@@ -693,7 +693,7 @@ wheels = [
 [[package]]
 name = "dpg-evaluator"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=dpgbench&branch=main#90200058413611540befca5e0f04dc5e06cde802" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=dpgbench&branch=paper-impl#01c437fe4cc71b29ca53ef5c182a461d4bf0a777" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'linux'" },
@@ -863,7 +863,7 @@ http = [
 [[package]]
 name = "geneval-evaluator"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval&branch=main#90200058413611540befca5e0f04dc5e06cde802" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=geneval&branch=paper-impl#01c437fe4cc71b29ca53ef5c182a461d4bf0a777" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'linux'" },
@@ -2819,7 +2819,7 @@ wheels = [
 [[package]]
 name = "t2v-metrics"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=t2v_metrics&branch=main#90200058413611540befca5e0f04dc5e06cde802" }
+source = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git?subdirectory=t2v_metrics&branch=paper-impl#01c437fe4cc71b29ca53ef5c182a461d4bf0a777" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "opencv-python", marker = "sys_platform == 'linux'" },
