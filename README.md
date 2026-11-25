@@ -56,6 +56,10 @@ uv sync
 # prepare data
 uv run python scripts/prepare.py --data {all,imagenet,t2i,t2i-res512,eval}
 
+# optional: GPIC (100M permissive images) center-cropped to 256/512px, opt-in and large:
+# raw shards (~13 TB) are streamed and deleted; output needs ~3.3 TB (256) + ~10.4 TB (512)
+uv run python scripts/prepare_gpic.py --res 256 512
+
 # download pretrained models
 uv run hf download diffusion-bench/diffusion-bench --local-dir pretrained_models --exclude .gitattributes
 ```
@@ -128,6 +132,8 @@ For ImageNet, pick the CFG-off baseline (`[STAGE2_CONFIG_PATH].yaml`) or the per
 | **Loss** | `Flow Matching` `REPA` `iREPA` |
 | **Architecture** | `LightningDiT` `JiT` `DDT` `MMDiT-Single` |
 | **Tasks** | `ImageNet`: class-conditional generation <br>`T2I`: text-to-image generation |
+| **Text Conditioning** | `Qwen3` / `Qwen3.5` encoders, multi-layer features (`layers`, `feature_norm`, `system_prompt`) <br>`TextRefiner`: trainable cross-layer + token refiner |
+| **Training Data** | `ImageNet` <br>`BLIP3o` (256/512) <br>`GPIC` (256/512) |
 | **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` |
 | **Training Backend** | `DDP` `FSDP [TODO]` |
 
