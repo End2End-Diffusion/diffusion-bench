@@ -54,6 +54,7 @@ class LightningDiT(nn.Module):
         context_dim=768,
         cond_arch=None,
         is_meanflow=False,
+        refiner_cfg=None,
     ):
         super().__init__()
 
@@ -73,7 +74,7 @@ class LightningDiT(nn.Module):
         if is_meanflow:
             self.t_abs_embedder = GaussianFourierEmbedding(self.hidden_size, cond_arch.num_t_tokens)
         self.ctx_embedder = ConditionEmbedder(
-            self.hidden_size, num_classes, context_dim, condition_type, cond_arch.num_c_tokens
+            self.hidden_size, num_classes, context_dim, condition_type, cond_arch.num_c_tokens, refiner_cfg
         )
 
         self.blocks = nn.ModuleList([
@@ -131,7 +132,7 @@ class LightningDiT(nn.Module):
         seq.append(self.t_embedder(t))
         if self.is_meanflow:
             seq.append(self.t_abs_embedder(condition_kwargs["t_abs"]))
-        seq.append(self.ctx_embedder(condition_kwargs["context"]))
+        seq.append(self.ctx_embedder(condition_kwargs["context"], condition_kwargs.get("attn_mask")))
         seq = torch.cat(seq, dim=1)
         return seq
 

@@ -73,9 +73,12 @@ def setup_text_encoder(config, rank, device):
     """
     if config.conditioning.type != "text":
         return None
+    refiner = config.conditioning.refiner
     with main_process_first(rank):
-        text_encoder = TextEncoder(**dataclasses.asdict(config.conditioning.text_encoder)).to(device)
+        text_encoder = TextEncoder(**dataclasses.asdict(config.conditioning.text_encoder),
+                                   stack_layers=refiner.enable).to(device)
     config.conditioning.context_dim = text_encoder.feature_dim
+    refiner.num_text_layers = len(text_encoder.layer_indices)
     return text_encoder
 
 
