@@ -1,4 +1,5 @@
-"""Distributed generation evaluation — FID, CLIPScore, VQAScore, GenEval, DPG-Bench."""
+"""Distributed generation evaluation — FID, CLIPScore, VQAScore, GenEval, GenEval2, DPG-Bench,
+PRISM-Bench, Qwen-Image-Bench."""
 
 import os
 import sys
@@ -16,7 +17,39 @@ from .distributional import compute_distributional_metrics, filter_distributiona
 from .dpgbench import DPGEvaluator
 from .fid import calculate_gfid
 from .geneval import GenEvalEvaluator
+from .geneval2 import GenEval2Evaluator
+from .prism_bench import PrismBenchEvaluator
+from .qwen_image_bench import QwenImageBenchEvaluator
 from .vqascore import VQAScoreEvaluator
+
+
+def _requested_submetrics(metrics_to_compute: List[str], prefix: str, valid: tuple) -> list:
+    """Bare `prefix` requests every sub-metric; `prefix_<sub>` requests one.
+
+    Returned in `valid` order so every rank builds local_scores in the same key
+    order (the all-reduce in _aggregate_distributed_metrics is positional).
+    """
+    requested = set()
+    for elem in metrics_to_compute:
+        if elem == prefix:
+            requested.update(valid)
+        elif elem.startswith(prefix + '_'):
+            sub = elem[len(prefix) + 1:]
+            if sub in valid:
+                requested.add(sub)
+            else:
+                print(f"[{prefix}] Warning: unknown metric '{elem}', skipping. Valid: {valid}")
+    return [sub for sub in valid if sub in requested]
+
+
+def _accumulate_submetrics(local_scores: dict, prefix: str, batch_scores: Dict[str, torch.Tensor]):
+    """Add per-image sub-metric scores, skipping NaNs (sparse dimensions / unscored images)."""
+    for sub, sub_scores in batch_scores.items():
+        key = f'{prefix}_{sub}'
+        if key in local_scores:
+            valid = ~torch.isnan(sub_scores)
+            local_scores[key]['sum'] += sub_scores[valid].sum().item()
+            local_scores[key]['count'] += int(valid.sum().item())
 
 
 def _init_evaluators(metrics_to_compute: List[str], condition_type: str, device: torch.device):
@@ -45,13 +78,36 @@ def _init_evaluators(metrics_to_compute: List[str], condition_type: str, device:
         evaluators['dpgbench'] = DPGEvaluator(device=str(device))
         local_scores['dpgbench'] = {'sum': 0.0, 'count': 0}
 
+    # GenEval2 / Qwen-Image-Bench: one judge pass yields all sub-metrics, reported as
+    # '<name>_<sub>'. Bare '<name>' reports all of them, '<name>_<sub>' just one.
+    if condition_type == 'text':
+        for name, cls in (('geneval2', GenEval2Evaluator), ('qwen_image_bench', QwenImageBenchEvaluator)):
+            requested = _requested_submetrics(metrics_to_compute, name, cls.METRICS)
+            if requested:
+                evaluators[name] = cls(device=str(device))
+                for sub in requested:
+                    local_scores[f'{name}_{sub}'] = {'sum': 0.0, 'count': 0}
+
+    # PRISM-Bench: the metric string picks the judge (like VQAScore). Bare 'prism_bench'
+    # uses the package default; 'prism_bench_<judge>' (e.g. prism_bench_qwen2.5-vl-7b)
+    # picks another. Each judge reports every sub-metric as '<metric>_<sub>'.
+    prism_metrics = [m for m in metrics_to_compute if m == 'prism_bench' or m.startswith('prism_bench_')]
+    if prism_metrics and condition_type == 'text':
+        evaluators['prism_bench'] = {}
+        for elem in prism_metrics:
+            judge = None if elem == 'prism_bench' else elem[len('prism_bench_'):]
+            evaluators['prism_bench'][elem] = PrismBenchEvaluator(model_name=judge, device=str(device))
+            for sub in PrismBenchEvaluator.METRICS:
+                local_scores[f'{elem}_{sub}'] = {'sum': 0.0, 'count': 0}
+
     return evaluators, local_scores
 
 
 def _aggregate_distributed_metrics(local_scores: dict, device: torch.device) -> Dict[str, float]:
     """All-reduce local score sums/counts across ranks and return averaged metrics."""
     metrics = {}
-    for metric_name, scores in local_scores.items():
+    # Sorted: all_reduce is positional, so every rank must reduce keys in the same order.
+    for metric_name, scores in sorted(local_scores.items()):
         sum_tensor = torch.tensor([scores['sum']], device=device, dtype=torch.float64)
         count_tensor = torch.tensor([scores['count']], device=device, dtype=torch.float64)
         dist.all_reduce(sum_tensor, op=dist.ReduceOp.SUM)
@@ -185,6 +241,14 @@ def evaluate_generation_distributed(
                 batch_scores = evaluators['dpgbench'].compute_batch_scores(gen_np, list(cond))
                 local_scores['dpgbench']['sum'] += batch_scores.sum().item()
                 local_scores['dpgbench']['count'] += len(cond)
+            for name in ('geneval2', 'qwen_image_bench'):
+                if name in evaluators:
+                    batch_scores = evaluators[name].compute_batch_scores(gen_np, list(cond))
+                    _accumulate_submetrics(local_scores, name, batch_scores)
+            if 'prism_bench' in evaluators:
+                for elem, evaluator in evaluators['prism_bench'].items():
+                    batch_scores = evaluator.compute_batch_scores(gen_np, list(cond))
+                    _accumulate_submetrics(local_scores, elem, batch_scores)
 
             for img in gen_np:
                 generations.append(img)

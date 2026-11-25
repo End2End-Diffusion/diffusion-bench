@@ -128,7 +128,7 @@ For ImageNet, pick the CFG-off baseline (`[STAGE2_CONFIG_PATH].yaml`) or the per
 | **Loss** | `Flow Matching` `REPA` `iREPA` |
 | **Architecture** | `LightningDiT` `JiT` `DDT` |
 | **Tasks** | `ImageNet`: class-conditional generation <br>`T2I`: text-to-image generation |
-| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `DPGBench` `GenAIBench` `VQAScore` |
+| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` |
 | **Training Backend** | `DDP` `FSDP [TODO]` |
 
 ## Compatibility
