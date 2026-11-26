@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from .lightningDiT import LightningDiT, LightningDiTBlock, LightningFinalLayer
-from .model_utils import RoPE, modulate
+from .model_utils import GaussianFourierEmbedding, RoPE, modulate
 
 
 class MMDiTSingleBlock(LightningDiTBlock):
@@ -46,7 +46,7 @@ class MMDiTSingle(LightningDiT):
         self.final_modulation_embedder = nn.Sequential(nn.SiLU(), nn.Linear(h, 2 * h))
         self.num_cond_tokens = cond_arch.num_c_tokens
         self.rope = RoPE(h // num_heads, self.x_embedder.num_patches, self.num_cond_tokens, extra_tokens=int(enable_reg))
-        self.t_embedder.learnable_tokens.requires_grad_(False)  # only the pooled embedding feeds adaLN
+        self.t_embedder = GaussianFourierEmbedding(h, n_tokens=0)  # timestep only via adaLN: no time tokens
 
         self.initialize_weights()
         for layer in (self.modulation_embedder[1], self.final_modulation_embedder[1]):
@@ -63,7 +63,7 @@ class MMDiTSingle(LightningDiT):
         zt_intermediate = None
         x = self._build_sequence(x, t, condition_kwargs)
         attn_mask = self._build_attn_mask(x, condition_kwargs)
-        t_emb = self.t_embedder(t, return_base_embed=True)[0].squeeze(1)
+        t_emb = self.t_embedder(t)
         mod, final_mod = self.modulation_embedder(t_emb), self.final_modulation_embedder(t_emb)
         s, n = int(self.enable_reg), self.x_embedder.num_patches
         for i, block in enumerate(self.blocks):

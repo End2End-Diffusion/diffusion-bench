@@ -95,12 +95,15 @@ class GaussianFourierEmbedding(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_size, hidden_size, bias=True),
         )
-        self.learnable_tokens = nn.Parameter(torch.normal(0, 1 / hidden_size**0.5, (n_tokens, hidden_size)))
+        # n_tokens=0: no time tokens, forward returns only the pooled embedding [B, H] (e.g. for adaLN)
+        self.learnable_tokens = nn.Parameter(torch.normal(0, 1 / hidden_size**0.5, (n_tokens, hidden_size))) if n_tokens else None
 
     def forward(self, t, return_base_embed=False):
         t = t[:, None] * self.W[None, :] * 2 * torch.pi
         t_embed = torch.cat([torch.sin(t), torch.cos(t)], dim=-1)
         t_embed = self.mlp(t_embed)
+        if self.learnable_tokens is None:
+            return t_embed
         if return_base_embed:
             t_embed = t_embed.unsqueeze(1)
             return t_embed, self.learnable_tokens + t_embed
