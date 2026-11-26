@@ -92,6 +92,13 @@ eval:
       split: 'val'
       condition_type: 'text'
       metrics: ['vqascore_clip-flant5-xxl']
+    gpic:  # GPIC FID protocol: 50K val captions vs GPIC Inception stats (scripts/prepare_gpic.py --eval)
+      type: 'hf'
+      data_dir: './data'
+      split: 'val'
+      condition_type: 'text'
+      metrics: ['fid']
+      reference_npz: './data/gpic/val_stats.npz'
 
 misc:
   latent_size: [128, 16, 16]

@@ -88,12 +88,11 @@ def calculate_gfid(
     batch_size: int = 64,
     device: str = "cuda",
 ) -> tuple[float, float]:
-    if 'mu' in ref_arr and 'sigma' in ref_arr:
-        mu_ref, sigma_ref = ref_arr['mu'], ref_arr['sigma']
-    elif 'ref_mu' in ref_arr and 'ref_sigma' in ref_arr:
-        mu_ref, sigma_ref = ref_arr['ref_mu'], ref_arr['ref_sigma']
-    else:
-        raise KeyError(f"Reference has no mu/sigma or ref_mu/ref_sigma keys, found: {list(ref_arr.keys())}")
+    prefixes = ("", "ref_", "inception_")  # inception_: GPIC reference_stats
+    prefix = next((p for p in prefixes if f"{p}mu" in ref_arr and f"{p}sigma" in ref_arr), None)
+    if prefix is None:
+        raise KeyError(f"Reference has no {{{','.join(prefixes)}}}mu/sigma keys, found: {list(ref_arr.keys())}")
+    mu_ref, sigma_ref = ref_arr[f"{prefix}mu"], ref_arr[f"{prefix}sigma"]
     mu_gen, sigma_gen, logits_gen = _compute_inception_moments_from_arr(arr1, batch_size=batch_size, device=device)
     return _fid_from_moments(mu_gen, sigma_gen, mu_ref, sigma_ref), _inception_score(logits_gen)
 

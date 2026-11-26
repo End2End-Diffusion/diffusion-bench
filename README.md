@@ -57,7 +57,8 @@ uv sync
 uv run python scripts/prepare.py --data {all,imagenet,t2i,t2i-res512,eval}
 
 # optional: GPIC (100M permissive images) center-cropped to 256/512px, opt-in and large:
-# raw shards (~13 TB) are streamed and deleted; output needs ~3.3 TB (256) + ~10.4 TB (512)
+# raw shards (~13 TB) are streamed and deleted; output needs ~3.3 TB (256) + ~10.4 TB (512).
+# Also fetches the GPIC FID protocol files (50K val/test captions + reference stats); --eval fetches only those.
 uv run python scripts/prepare_gpic.py --res 256 512
 
 # download pretrained models
@@ -134,7 +135,7 @@ For ImageNet, pick the CFG-off baseline (`[STAGE2_CONFIG_PATH].yaml`) or the per
 | **Tasks** | `ImageNet`: class-conditional generation <br>`T2I`: text-to-image generation |
 | **Text Conditioning** | `Qwen3` / `Qwen3.5` encoders, multi-layer features (`layers`, `feature_norm`, `system_prompt`) <br>`TextRefiner`: trainable cross-layer + token refiner |
 | **Training Data** | `ImageNet` <br>`BLIP3o` (256/512) <br>`GPIC` (256/512) |
-| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` |
+| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` `GPIC-FID` |
 | **Training Backend** | `DDP` `FSDP [TODO]` |
 
 ## Compatibility

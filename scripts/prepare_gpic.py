@@ -6,9 +6,14 @@ Download GPIC (stanford-vision-lab/gpic, ~100M permissive images) and center-cro
 Raw shards (~13 TB for train) are streamed one by one and deleted after cropping; the
 cropped output needs ~3.3 TB at 256px and ~10.4 TB at 512px. Reruns resume where they stopped.
 
+It first fetches the FID protocol files: the 50K val/test captions as a text-only dataset
+(<data-dir>/gpic/{val,test}) and GPIC's Inception/DINOv2 reference stats
+(<data-dir>/gpic/{val,test}_stats.npz, ~0.7 GB each). `--eval` fetches only these.
+
 Usage:
-    uv run python scripts/prepare_gpic.py                        # all splits, 256 + 512
+    uv run python scripts/prepare_gpic.py                        # eval files + all splits, 256 + 512
     uv run python scripts/prepare_gpic.py --res 256 --splits val test
+    uv run python scripts/prepare_gpic.py --eval                 # eval files only
 """
 
 import argparse
@@ -121,6 +126,22 @@ def prepare_gpic(data_dir, sizes, splits, workers):
         sys.exit(f"{len(failed)} shards failed; rerun the same command to resume.")
 
 
+def prepare_gpic_eval(data_dir):
+    from datasets import Dataset
+
+    out = data_dir / "gpic"
+    for split in ("val", "test"):
+        stats = hf_hub_download(GPIC_REPO, f"reference_stats/{split}_stats.npz", repo_type="dataset", local_dir=out)
+        shutil.move(stats, out / f"{split}_stats.npz")
+        rows = hf_hub_download(GPIC_REPO, f"gpic_{split}_50k.jsonl", repo_type="dataset", local_dir=out)
+        captions = [json.loads(line)["caption"].strip() for line in open(rows)]
+        os.remove(rows)
+        Dataset.from_dict({"text": captions}).save_to_disk(str(out / split))
+        print(f"GPIC {split}: {len(captions)} captions -> {out / split}, stats -> {out / f'{split}_stats.npz'}")
+    shutil.rmtree(out / "reference_stats", ignore_errors=True)
+    shutil.rmtree(out / ".cache", ignore_errors=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Download and center-crop GPIC")
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR,
@@ -128,8 +149,11 @@ def main():
     parser.add_argument("--res", type=int, nargs="+", default=[256, 512], choices=[256, 512])
     parser.add_argument("--splits", nargs="+", default=["val", "test", "train"], choices=list(GPIC_SHARDS))
     parser.add_argument("--workers", type=int, default=min(64, os.cpu_count() // 2))
+    parser.add_argument("--eval", action="store_true", help="Only fetch the FID captions + reference stats")
     args = parser.parse_args()
-    prepare_gpic(args.data_dir, args.res, args.splits, args.workers)
+    prepare_gpic_eval(args.data_dir)  # small (~1.4 GB), always fetched first
+    if not args.eval:
+        prepare_gpic(args.data_dir, args.res, args.splits, args.workers)
 
 
 if __name__ == "__main__":
