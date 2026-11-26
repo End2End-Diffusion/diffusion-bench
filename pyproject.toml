@@ -37,6 +37,7 @@ dependencies = [
   "geneval2-evaluator",
   "prism-bench-evaluator",
   "qwen-image-bench-evaluator",
+  "fd-evaluator",
 ]
 
 [dependency-groups]
@@ -64,6 +65,7 @@ t2v-metrics = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals
 geneval2-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "geneval2", branch = "main" }
 prism-bench-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "prism_bench", branch = "main" }
 qwen-image-bench-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "qwen-image-bench", branch = "main" }
+fd-evaluator = { git = "https://github.com/End2End-Diffusion/diffusionbench-evals.git", subdirectory = "fd_evaluator", branch = "main" }
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
