@@ -89,7 +89,7 @@ def main():
         world_size=world_size,
         transform=stage2_transform if needs_transform else None,
         condition_type=config.conditioning.type,
-        virtual_epoch_steps=config.training.virtual_epoch_steps,
+        virtual_epoch_steps=config.training.virtual_epoch_steps and config.training.virtual_epoch_steps * config.training.grad_accum_steps,  # optimizer steps -> micro-batches
     )
 
     # eval setup
