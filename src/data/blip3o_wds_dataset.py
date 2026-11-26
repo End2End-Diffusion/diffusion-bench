@@ -14,7 +14,7 @@ BLIP3O_METADATA = {
     "60k": {"num_samples": 57_553, "num_shards": 11},
     "60k-128shards": {"num_samples": 57_553, "num_shards": 128},  # Resharded for better worker utilization
     # GPIC (scripts/prepare_gpic.py -> data/gpic-{256,512}/{train,val,test})
-    "train": {"num_samples": 99_780_000, "num_shards": 8000},
+    "train": {"num_samples": 99_784_308, "num_shards": 8000},
     "val": {"num_samples": 199_554, "num_shards": 32},
     "test": {"num_samples": 997_805, "num_shards": 128},
 }
