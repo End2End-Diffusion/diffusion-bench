@@ -5,10 +5,9 @@ Download GPIC (stanford-vision-lab/gpic, ~100M permissive images) and center-cro
 Raw shards (~13 TB) are streamed and deleted after cropping; output needs ~3.3 TB at 256px and
 ~10.4 TB at 512px. Reruns resume where they stopped.
 
-FID files go to <data-dir>/gpic-<res>/eval/: the 50K val/test captions ({val,test}/) and Inception
-reference stats ({val,test}_stats.npz). 256px uses GPIC's official stats; 512px stats are built
-here over the same images with GPIC's recipe (center crop + bicubic resize). `--eval` prepares
-only these. Note: GPIC's stats and its 50K captions are different subsets (~0.5 FID noise floor).
+Eval sets go to <data-dir>/gpic-<res>/eval/{val,test}/: GPIC's 50K protocol captions with their
+images (GPIC's recipe: square center crop + bicubic resize, stored as PNG), so FID references are
+computed from the same images. `--eval` prepares only these.
 
 Usage:
     uv run python scripts/prepare_gpic.py [--res 256 512] [--eval]
@@ -19,14 +18,13 @@ import io
 import json
 import os
 import shutil
+import signal
 import sys
 import tarfile
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-import numpy as np
-import torch
 from huggingface_hub import hf_hub_download
 from PIL import Image, ImageOps
 
@@ -49,6 +47,21 @@ def raw_samples(rel, tmp_root):
                     meta = data
                 else:
                     yield key, meta, data
+
+
+def run_pool(fn, tasks, workers, on_done):
+    """Run fn(*task) in worker processes, calling on_done(i, task, future) as each finishes.
+    Ctrl-C cancels queued tasks, lets running ones finish, then exits (rerun to resume)."""
+    pool = ProcessPoolExecutor(workers, initializer=signal.signal, initargs=(signal.SIGINT, signal.SIG_IGN))
+    futures = {pool.submit(fn, *t): t for t in tasks}
+    try:
+        for i, f in enumerate(as_completed(futures), 1):
+            on_done(i, futures[f], f)
+    except KeyboardInterrupt:
+        print("Interrupted: finishing running tasks, then exiting; rerun to resume.", flush=True)
+        pool.shutdown(cancel_futures=True)
+        sys.exit(130)
+    pool.shutdown()
 
 
 def add(tar, name, data):
@@ -90,75 +103,61 @@ def prepare_shards(data_dir, sizes, workers):
     shutil.rmtree(data_dir / ".gpic_tmp", ignore_errors=True)
     (data_dir / ".gpic_tmp").mkdir()
     failed = []
-    with ProcessPoolExecutor(workers) as pool:
-        futures = {pool.submit(crop_shard, r, data_dir, sizes): r for r in todo}
-        for i, f in enumerate(as_completed(futures), 1):
-            if f.exception():
-                failed.append(futures[f])
-                print(f"FAILED {futures[f]}: {f.exception()}", flush=True)
-            if i % 20 == 0 or i == len(todo):
-                print(f"{i}/{len(todo)} shards done, {len(failed)} failed", flush=True)
+
+    def done(i, task, f):
+        if f.exception():
+            failed.append(task[0])
+            print(f"FAILED {task[0]}: {f.exception()}", flush=True)
+        if i % 20 == 0 or i == len(todo):
+            print(f"{i}/{len(todo)} shards done, {len(failed)} failed", flush=True)
+
+    run_pool(crop_shard, [(r, data_dir, sizes) for r in todo], workers, done)
     shutil.rmtree(data_dir / ".gpic_tmp", ignore_errors=True)
     if failed:
         sys.exit(f"{len(failed)} shards failed; rerun to resume.")
 
 
-def ref_crops(rel, keys, size, tmp_root):  # GPIC reference recipe: square center crop + bicubic resize
-    out = []
+def eval_crops(rel, keys, sizes, tmp_root):  # GPIC reference recipe: square center crop + bicubic resize
+    out = {}
     for key, _, data in raw_samples(rel, tmp_root):
         if key in keys:
             im = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
             w, h = im.size
             c, l, t = min(w, h), (w - min(w, h)) // 2, (h - min(w, h)) // 2
-            out.append(np.asarray(im.crop((l, t, l + c, t + c)).resize((size, size), Image.Resampling.BICUBIC)))
+            square, out[key] = im.crop((l, t, l + c, t + c)), []
+            for s in sizes:
+                buf = io.BytesIO()
+                square.resize((s, s), Image.Resampling.BICUBIC).save(buf, "PNG")
+                out[key].append(buf.getvalue())
     return out
 
 
-def ref_stats(data_dir, split, keys, size, workers):
-    """Inception moments of the protocol images, with the same extractor as src/eval/fid.py."""
-    from torch_fidelity.feature_extractor_inceptionv3 import FeatureExtractorInceptionV3
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    fe = FeatureExtractorInceptionV3(name="inception-v3-compat", features_list=["2048"]).to(device).eval()
-    tmp_root = data_dir / ".gpic_tmp_eval"
-    shutil.rmtree(tmp_root, ignore_errors=True)
-    tmp_root.mkdir(parents=True)
-    feats = []
-    with ProcessPoolExecutor(workers) as pool:
-        rels = [f"{split}/gpic_{split}_{i:05d}.tar" for i in range(SHARDS[split])]
-        for f in as_completed([pool.submit(ref_crops, r, keys, size, tmp_root) for r in rels]):
-            crops = f.result()
-            for i in range(0, len(crops), 100):
-                x = torch.from_numpy(np.stack(crops[i:i + 100])).permute(0, 3, 1, 2).to(device)
-                with torch.no_grad():
-                    feats.append(fe(x)[0].double().cpu().numpy())
-    shutil.rmtree(tmp_root, ignore_errors=True)
-    feats = np.concatenate(feats)
-    print(f"GPIC {split} {size}px reference: {len(feats)}/{len(keys)} protocol images", flush=True)
-    return dict(inception_mu=feats.mean(0), inception_sigma=np.cov(feats, rowvar=False))
-
-
 def prepare_eval(data_dir, sizes, workers):
-    from datasets import Dataset
+    from datasets import Dataset, Features, Image as HFImage, Value
 
+    tmp_root = data_dir / ".gpic_tmp_eval"
     for split in ("val", "test"):
+        outs = [data_dir / f"gpic-{s}" / "eval" / split for s in sizes]
+        if all(o.exists() for o in outs):
+            continue
         rows = [json.loads(line) for line in open(hf_hub_download(REPO, f"gpic_{split}_50k.jsonl", repo_type="dataset"))]
-        official = None  # GPIC's 256px stats; note they cover a different 50K subset than the captions
-        for size in sizes:
-            out = data_dir / f"gpic-{size}" / "eval"
-            stats = out / f"{split}_stats.npz"
-            if not (out / split).exists():
-                Dataset.from_dict({"text": [r["caption"].strip() for r in rows]}).save_to_disk(str(out / split))
-            if stats.exists():
-                continue
-            official = official or hf_hub_download(REPO, f"reference_stats/{split}_stats.npz", repo_type="dataset",
-                                                   local_dir=data_dir / ".gpic_ref")
-            if size == 256:
-                shutil.copy(official, stats)
-            else:  # same images as the official stats, at this resolution
-                np.savez(stats, **ref_stats(data_dir, split, set(np.load(official)["key"].tolist()), size, workers))
-            print(f"GPIC eval {split} {size}px -> {out}", flush=True)
-    shutil.rmtree(data_dir / ".gpic_ref", ignore_errors=True)
+        keys, images = {r["key"] for r in rows}, {}
+        shutil.rmtree(tmp_root, ignore_errors=True)
+        tmp_root.mkdir()
+        rels = [f"{split}/gpic_{split}_{i:05d}.tar" for i in range(SHARDS[split])]
+        run_pool(eval_crops, [(r, keys, sizes, tmp_root) for r in rels], workers,
+                 lambda i, task, f: images.update(f.result()))
+        rows = [r for r in rows if r["key"] in images]  # a few protocol images were removed upstream
+        features = Features({"image": HFImage(), "text": Value("string")})
+        for i, out in enumerate(outs):
+            partial = out.with_name(out.name + ".partial")  # renamed when complete, so reruns can resume
+            shutil.rmtree(partial, ignore_errors=True)
+            Dataset.from_dict({"image": [{"bytes": images[r["key"]][i], "path": None} for r in rows],
+                               "text": [r["caption"].strip() for r in rows]}, features=features).save_to_disk(str(partial))
+            shutil.rmtree(out, ignore_errors=True)
+            partial.rename(out)
+            print(f"GPIC eval {split}: {len(rows)} images + captions -> {out}", flush=True)
+    shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 def main():
@@ -166,7 +165,7 @@ def main():
     parser.add_argument("--data-dir", type=Path, default=Path(__file__).parent.parent / "data")
     parser.add_argument("--res", type=int, nargs="+", default=[256, 512], choices=[256, 512])
     parser.add_argument("--workers", type=int, default=min(64, os.cpu_count() // 2))
-    parser.add_argument("--eval", action="store_true", help="Only prepare the FID captions + reference stats")
+    parser.add_argument("--eval", action="store_true", help="Only prepare the eval sets")
     args = parser.parse_args()
     args.data_dir.mkdir(parents=True, exist_ok=True)
     prepare_eval(args.data_dir, args.res, args.workers)

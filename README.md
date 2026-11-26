@@ -58,9 +58,8 @@ uv run python scripts/prepare.py --data {all,imagenet,t2i,t2i-res512,eval}
 
 # optional: GPIC (100M permissive images) center-cropped to 256/512px, opt-in and large:
 # raw shards (~13 TB) are streamed and deleted; output needs ~3.3 TB (256) + ~10.4 TB (512).
-# Also prepares the GPIC FID files in data/gpic-{256,512}/eval/ (50K val/test captions + Inception stats).
-# 256px uses GPIC's official reference stats; 512px stats are built while preparing (GPIC's recipe:
-# center crop + bicubic resize of the same 50K images). --eval prepares only these eval files.
+# Also prepares GPIC eval sets in data/gpic-{256,512}/eval/{val,test}: GPIC's 50K protocol captions with
+# their images (GPIC's recipe: center crop + bicubic resize). --eval prepares only these. Reruns resume.
 uv run python scripts/prepare_gpic.py --res 256 512
 
 # download pretrained models
