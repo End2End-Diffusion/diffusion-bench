@@ -56,6 +56,12 @@ uv sync
 # prepare data
 uv run python scripts/prepare.py --data {all,imagenet,t2i,t2i-res512,eval}
 
+# optional: GPIC (100M permissive images) center-cropped to 256/512px, opt-in and large:
+# raw shards (~13 TB) are streamed and deleted; output needs ~3.3 TB (256) + ~10.4 TB (512).
+# Also prepares GPIC eval sets in data/gpic-{256,512}/eval/{val,test}: GPIC's 50K protocol captions with
+# their images (GPIC's recipe: center crop + bicubic resize). --eval prepares only these. Reruns resume.
+uv run python scripts/prepare_gpic.py --res 256 512
+
 # download pretrained models
 uv run hf download diffusion-bench/diffusion-bench --local-dir pretrained_models --exclude .gitattributes
 ```
@@ -128,7 +134,9 @@ For ImageNet, pick the CFG-off baseline (`[STAGE2_CONFIG_PATH].yaml`) or the per
 | **Loss** | `Flow Matching` `REPA` `iREPA` |
 | **Architecture** | `LightningDiT` `JiT` `DDT` `MMDiT-Single` <br>Timestep (`time_cond`): `in_context` tokens (default) or `adaln` (adaLN-single; not with MeanFlow) for `LightningDiT` and the `DDT` encoder (the `DDT` decoder is always adaLN). `MMDiT-Single` = `LightningDiT` + `adaln`. Text/class: in-context tokens |
 | **Tasks** | `ImageNet`: class-conditional generation <br>`T2I`: text-to-image generation |
-| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` <br>FD ([`fd_evaluator`](https://github.com/End2End-Diffusion/diffusionbench-evals/tree/main/fd_evaluator)): `FID` `FD_<encoder>` `FDr6` `MIND`; without `reference_npz`, references are computed online from the eval set's images |
+| **Text Conditioning** | `Qwen3` / `Qwen3.5` encoders, multi-layer features (`layers`, `feature_norm`, `system_prompt`) <br>`TextRefiner`: trainable cross-layer + token refiner |
+| **Training Data** | `ImageNet` <br>`BLIP3o` (256/512) <br>`GPIC` (256/512) |
+| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` <br>FD ([`fd_evaluator`](https://github.com/End2End-Diffusion/diffusionbench-evals/tree/main/fd_evaluator)): `FID` `FD_<encoder>` `FDr6` `MIND`; without `reference_npz`, references are computed online from the eval set's images <br>GPIC protocol (`gpic-{256,512}`, `split: eval/val`): `fid` `fd_dinov2_cls` |
 | **Training Backend** | `DDP` `FSDP [TODO]` |
 
 ## Compatibility
