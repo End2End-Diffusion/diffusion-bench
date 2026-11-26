@@ -2,33 +2,24 @@ import torch
 import torch.nn as nn
 from timm.models.vision_transformer import PatchEmbed
 
-from .model_utils import ConditionEmbedder, GaussianFourierEmbedding, NormAttention, RMSNorm, RoPE, SwiGLUFFN
-
-
-class LightningDiTBlock(nn.Module):
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0):
-        super().__init__()
-        self.norm1 = RMSNorm(hidden_size)
-        self.norm2 = RMSNorm(hidden_size)
-        self.attn = NormAttention(hidden_size, num_heads)
-        self.mlp = SwiGLUFFN(hidden_size, int(2/3 * hidden_size * mlp_ratio))
-
-    def forward(self, x, rope, attn_mask=None):
-        x = x + self.attn(self.norm1(x), rope=rope, attn_mask=attn_mask)
-        x = x + self.mlp(self.norm2(x))
-        return x
+from .model_utils import (ConditionEmbedder, DiffusionTransformerBlock, GaussianFourierEmbedding, RMSNorm, RoPE,
+                          adaln_single, check_time_cond, modulate)
 
 
 class LightningFinalLayer(nn.Module):
-    def __init__(self, hidden_size, patch_size, out_channels, cls_dim=None):
+    def __init__(self, hidden_size, patch_size, out_channels, cls_dim=None, adaln=False):
         super().__init__()
         self.norm_final = RMSNorm(hidden_size)
         self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels)
         if cls_dim is not None:
             self.cls_linear = nn.Linear(hidden_size, cls_dim)
+        if adaln:
+            self.scale_shift_table = nn.Parameter(torch.randn(2, hidden_size) / hidden_size ** 0.5)
 
-    def forward(self, x):
+    def forward(self, x, mod=None):
         x = self.norm_final(x)
+        if mod is not None:
+            x = modulate(x, *adaln_single(self.scale_shift_table, mod, 2))
         if hasattr(self, 'cls_linear'):
             cls_pred = self.cls_linear(x[:, 0, :])
             return self.linear(x[:, 1:, :]), cls_pred
@@ -55,8 +46,10 @@ class LightningDiT(nn.Module):
         cond_arch=None,
         is_meanflow=False,
         refiner_cfg=None,
+        time_cond="in_context",  # "in_context": time tokens in the sequence; "adaln": adaLN-single
     ):
         super().__init__()
+        self.adaln = check_time_cond(time_cond, is_meanflow)
 
         self.in_channels = in_channels
         self.patch_size = patch_size
@@ -69,20 +62,25 @@ class LightningDiT(nn.Module):
         self.x_embedder = PatchEmbed(input_size, self.patch_size, in_channels, hidden_size)
 
         # MeanFlow conditions on two times (t, t-r); add a second time embedder + tokens for absolute t
-        self.num_cond_tokens = cond_arch.num_t_tokens * (2 if is_meanflow else 1) + cond_arch.num_c_tokens
-        self.t_embedder = GaussianFourierEmbedding(self.hidden_size, cond_arch.num_t_tokens)
+        n_t = 0 if self.adaln else cond_arch.num_t_tokens
+        self.num_cond_tokens = n_t * (2 if is_meanflow else 1) + cond_arch.num_c_tokens
+        self.t_embedder = GaussianFourierEmbedding(self.hidden_size, n_t)
         if is_meanflow:
-            self.t_abs_embedder = GaussianFourierEmbedding(self.hidden_size, cond_arch.num_t_tokens)
+            self.t_abs_embedder = GaussianFourierEmbedding(self.hidden_size, n_t)
         self.ctx_embedder = ConditionEmbedder(
             self.hidden_size, num_classes, context_dim, condition_type, cond_arch.num_c_tokens, refiner_cfg
         )
 
         self.blocks = nn.ModuleList([
-            LightningDiTBlock(self.hidden_size, num_heads, mlp_ratio)
+            DiffusionTransformerBlock(self.hidden_size, num_heads, mlp_ratio, adaln=self.adaln)
             for _ in range(depth)
         ])
 
-        self.final_layer = LightningFinalLayer(self.hidden_size, self.patch_size, self.in_channels, cls_dim=z_dim if enable_reg else None)
+        self.final_layer = LightningFinalLayer(self.hidden_size, self.patch_size, self.in_channels,
+                                               cls_dim=z_dim if enable_reg else None, adaln=self.adaln)
+        if self.adaln:  # one shared projection of the timestep embedding for all blocks / the final layer
+            self.modulation_embedder = nn.Sequential(nn.SiLU(), nn.Linear(self.hidden_size, 6 * self.hidden_size))
+            self.final_modulation_embedder = nn.Sequential(nn.SiLU(), nn.Linear(self.hidden_size, 2 * self.hidden_size))
         self.rope = RoPE(self.hidden_size // num_heads, self.x_embedder.num_patches, self.num_cond_tokens, extra_tokens=int(enable_reg))
         if enable_repa:
             self.repa_projector = nn.Linear(self.hidden_size, z_dim)
@@ -111,6 +109,12 @@ class LightningDiT(nn.Module):
                 nn.init.normal_(getattr(self, t_embedder).mlp[0].weight, std=0.02)
                 nn.init.normal_(getattr(self, t_embedder).mlp[2].weight, std=0.02)
 
+        # adaLN-single: zero-init the shared modulation
+        for name in ("modulation_embedder", "final_modulation_embedder"):
+            if hasattr(self, name):
+                nn.init.constant_(getattr(self, name)[1].weight, 0)
+                nn.init.constant_(getattr(self, name)[1].bias, 0)
+
         # Zero-out output layers
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
@@ -129,12 +133,20 @@ class LightningDiT(nn.Module):
         if self.enable_reg:
             seq.append(self.cls_in_norm(self.cls_in_proj(condition_kwargs["cls_t"])).unsqueeze(1))
         seq.append(self.x_embedder(x))
-        seq.append(self.t_embedder(t))
-        if self.is_meanflow:
-            seq.append(self.t_abs_embedder(condition_kwargs["t_abs"]))
+        if not self.adaln:
+            seq.append(self.t_embedder(t))
+            if self.is_meanflow:
+                seq.append(self.t_abs_embedder(condition_kwargs["t_abs"]))
         seq.append(self.ctx_embedder(condition_kwargs["context"], condition_kwargs.get("attn_mask")))
         seq = torch.cat(seq, dim=1)
         return seq
+
+    def _time_modulation(self, t):
+        """adaLN-single modulation for the blocks and the final layer (None for in-context time)."""
+        if not self.adaln:
+            return None, None
+        t_emb = self.t_embedder(t)
+        return self.modulation_embedder(t_emb), self.final_modulation_embedder(t_emb)
 
     def _build_attn_mask(self, seq, condition_kwargs):
         # Create multiplicative mask template
@@ -150,16 +162,17 @@ class LightningDiT(nn.Module):
         zt_intermediate = None
         x = self._build_sequence(x, t, condition_kwargs)
         attn_mask = self._build_attn_mask(x, condition_kwargs)
+        mod, final_mod = self._time_modulation(t)
         s, n = int(self.enable_reg), self.x_embedder.num_patches
         for i, block in enumerate(self.blocks):
-            x = block(x, self.rope, attn_mask)
+            x = block(x, self.rope, attn_mask, mod)
             if return_intermediate and (i + 1) == self.repa_layer_depth:
                 zt_intermediate = self.repa_projector(x[:, :s + n, :])
 
         if self.enable_reg:
-            x, cls_pred = self.final_layer(x[:, :s + n, :])
+            x, cls_pred = self.final_layer(x[:, :s + n, :], final_mod)
         else:
-            x = self.final_layer(x[:, :n, :])
+            x = self.final_layer(x[:, :n, :], final_mod)
         x = self.unpatchify(x)
         if self.enable_reg:
             x = (x, cls_pred)
@@ -174,7 +187,7 @@ class LightningDiTIG(LightningDiT):
         super().__init__(**kwargs)
         self.base_model_depth = base_model_depth
 
-        self.base_final_layer = LightningFinalLayer(self.hidden_size, self.patch_size, self.in_channels)
+        self.base_final_layer = LightningFinalLayer(self.hidden_size, self.patch_size, self.in_channels, adaln=self.adaln)
         nn.init.constant_(self.base_final_layer.linear.weight, 0)
         nn.init.constant_(self.base_final_layer.linear.bias, 0)
 
@@ -183,20 +196,21 @@ class LightningDiTIG(LightningDiT):
         x_base = None
         x = self._build_sequence(x, t, condition_kwargs)
         attn_mask = self._build_attn_mask(x, condition_kwargs)
+        mod, final_mod = self._time_modulation(t)
         s, n = int(self.enable_reg), self.x_embedder.num_patches
         for i, block in enumerate(self.blocks):
-            x = block(x, self.rope, attn_mask)
+            x = block(x, self.rope, attn_mask, mod)
             if return_intermediate and (i + 1) == self.repa_layer_depth:
                 zt_intermediate = self.repa_projector(x[:, :s + n, :])
             if (i + 1) == self.base_model_depth:
                 x_base = x[:, s:s + n, :]
 
         if self.enable_reg:
-            x, cls_pred = self.final_layer(x[:, :s + n, :])
+            x, cls_pred = self.final_layer(x[:, :s + n, :], final_mod)
         else:
-            x = self.final_layer(x[:, :n, :])
+            x = self.final_layer(x[:, :n, :], final_mod)
         x = self.unpatchify(x)
-        x_base = self.unpatchify(self.base_final_layer(x_base))
+        x_base = self.unpatchify(self.base_final_layer(x_base, final_mod))
 
         out = (x, x_base, cls_pred) if self.enable_reg else (x, x_base)
         if return_intermediate:

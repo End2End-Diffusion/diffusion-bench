@@ -36,6 +36,10 @@ def validate_stage2_config(config: Stage2Config) -> None:
             "(transport.meanflow); REG only works with the base Transport."
         )
 
+    # adaLN-single time conditioning takes one time; MeanFlow's two times need in-context tokens.
+    if config.stage_2.params.get("time_cond") == "adaln" and config.transport.meanflow is not None:
+        raise ValueError("stage_2.params.time_cond='adaln' is not supported with MeanFlow; use 'in_context'.")
+
     # Gradient accumulation
     if config.training.grad_accum_steps < 1:
         raise ValueError("training.grad_accum_steps must be >= 1.")

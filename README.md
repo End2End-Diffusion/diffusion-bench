@@ -132,11 +132,11 @@ For ImageNet, pick the CFG-off baseline (`[STAGE2_CONFIG_PATH].yaml`) or the per
 | **Output Prediction** | `x-prediction` `v-prediction` |
 | **Transport** | `Rectified-Flow` `MeanFlow` `Improved-MeanFlow` `Pixel-MeanFlow` `Drifting` |
 | **Loss** | `Flow Matching` `REPA` `iREPA` |
-| **Architecture** | `LightningDiT` `JiT` `DDT` `MMDiT-Single` |
+| **Architecture** | `LightningDiT` `JiT` `DDT` `MMDiT-Single` <br>Timestep (`time_cond`): `in_context` tokens (default) or `adaln` (adaLN-single; not with MeanFlow) for `LightningDiT` and the `DDT` encoder (the `DDT` decoder is always adaLN). `MMDiT-Single` = `LightningDiT` + `adaln`. Text/class: in-context tokens |
 | **Tasks** | `ImageNet`: class-conditional generation <br>`T2I`: text-to-image generation |
 | **Text Conditioning** | `Qwen3` / `Qwen3.5` encoders, multi-layer features (`layers`, `feature_norm`, `system_prompt`) <br>`TextRefiner`: trainable cross-layer + token refiner |
 | **Training Data** | `ImageNet` <br>`BLIP3o` (256/512) <br>`GPIC` (256/512) |
-| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` `GPIC-FID` |
+| **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` <br>FD ([`fd_evaluator`](https://github.com/End2End-Diffusion/diffusionbench-evals/tree/main/fd_evaluator)): `FID` `FD_<encoder>` `FDr6` `MIND`; without `reference_npz`, references are computed online from the eval set's images <br>GPIC protocol (`gpic-{256,512}`, `split: eval/val`): `fid` `fd_dinov2_cls` |
 | **Training Backend** | `DDP` `FSDP [TODO]` |
 
 ## Compatibility

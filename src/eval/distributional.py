@@ -6,12 +6,12 @@ generation.py -- this just delegates to the fd_evaluator package for
 gfid/fdr6/mind6/fdr_<ext>/mind_<ext> metric strings.
 
 Defaults:
-  - feature cache:           ~/.cache/nanogen-evals/features/
-                             (overridable via NANOGEN_EVALS_CACHE_DIR)
+  - feature cache:           ~/.cache/diffusionbench-evals/features/
+                             (overridable via DIFFUSIONBENCH_EVALS_CACHE_DIR)
   - MIND raw-image reference: <data_dir>/imagenet-256-val.npz
-                             (overridable via NANOGEN_EVALS_REF_IMAGES)
-  - mu/Sigma stats:           auto-downloaded from
-                             huggingface.co/datasets/nanovisionx/nanogen-evals-stats
+                             (overridable via DIFFUSIONBENCH_EVALS_REF_IMAGES)
+  - mu/Sigma stats:           fd_evaluator's ImageNet stats, auto-downloaded
+  - `reference_images` (the eval set's real images): references computed online instead
 
 Yaml schema is unchanged. Add the new metric strings to
 `eval.datasets.<name>.metrics` and that's all.
@@ -43,6 +43,7 @@ def compute_distributional_metrics(
     metrics: list[str],
     *,
     reference_npz: Optional[str] = None,
+    reference_images: Optional[np.ndarray] = None,
     data_dir: Optional[str] = None,
     device: torch.device,
     batch_size: int = 64,
@@ -54,10 +55,10 @@ def compute_distributional_metrics(
     """
     from fd_evaluator import compute_metrics
 
+    online = reference_images is not None
     needs_mind = any(m.startswith("mind") for m in metrics)
-    reference_images: Optional[str] = None
-    if needs_mind:
-        reference_images = os.environ.get("NANOGEN_EVALS_REF_IMAGES")
+    if needs_mind and not online:
+        reference_images = os.environ.get("DIFFUSIONBENCH_EVALS_REF_IMAGES")
         if not reference_images and data_dir:
             candidate = os.path.join(data_dir, "imagenet-256-val.npz")
             if os.path.exists(candidate):
@@ -65,24 +66,25 @@ def compute_distributional_metrics(
         if not reference_images:
             raise FileNotFoundError(
                 "MIND metric requested but no raw-image reference found. "
-                "Set NANOGEN_EVALS_REF_IMAGES or ensure "
+                "Set DIFFUSIONBENCH_EVALS_REF_IMAGES or ensure "
                 f"<data_dir>/imagenet-256-val.npz exists (data_dir={data_dir!r})."
             )
 
     cache_dir = os.environ.get(
-        "NANOGEN_EVALS_CACHE_DIR",
-        str(Path.home() / ".cache" / "nanogen-evals" / "features"),
+        "DIFFUSIONBENCH_EVALS_CACHE_DIR",
+        str(Path.home() / ".cache" / "diffusionbench-evals" / "features"),
     )
 
     kwargs = dict(
         images=gen_arr,
         metrics=metrics,
         reference_images=reference_images,
+        online_reference=online,
         device=("cuda" if device.type == "cuda" else "cpu"),
         batch_size=batch_size,
         feature_cache_dir=cache_dir,
         feature_cache_key=None,
-        reference_feature_cache_key="imagenet256_val",
+        reference_feature_cache_key=None if online else "imagenet256_val",
         verbose=True,
     )
     if reference_npz:

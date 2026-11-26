@@ -4,8 +4,9 @@ stage_1:
     resolution: 256
 
 stage_2:
-  target: stage2.models.mmdit_single.MMDiTSingle
+  target: stage2.models.lightningDiT.LightningDiT  # MMDiT-Single = LightningDiT + adaLN-single time
   params:
+    time_cond: 'adaln'
     input_size: 16
     patch_size: 1
     in_channels: 128

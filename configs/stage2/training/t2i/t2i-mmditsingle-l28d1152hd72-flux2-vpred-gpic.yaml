@@ -4,8 +4,9 @@ stage_1:
     resolution: 256
 
 stage_2:
-  target: stage2.models.mmdit_single.MMDiTSingle
+  target: stage2.models.lightningDiT.LightningDiT  # MMDiT-Single = LightningDiT + adaLN-single time
   params:
+    time_cond: 'adaln'
     input_size: 16
     patch_size: 1
     in_channels: 128
@@ -92,15 +93,13 @@ eval:
       split: 'val'
       condition_type: 'text'
       metrics: ['vqascore_clip-flant5-xxl']
-    gpic:  # GPIC FID protocol: 50K val captions vs Inception stats (scripts/prepare_gpic.py --eval)
-           # 256px: GPIC's official stats; 512px: ./data/gpic-512/eval/ (built by the prepare script)
+    gpic:  # GPIC protocol: 50K val captions; FD references computed online from their images (scripts/prepare_gpic.py)
       target: 'gpic-256'
       type: 'hf'
       data_dir: './data'
       split: 'eval/val'
       condition_type: 'text'
-      metrics: ['fid']
-      reference_npz: './data/gpic-256/eval/val_stats.npz'
+      metrics: ['fid', 'fd_dinov2_cls']
 
 misc:
   latent_size: [128, 16, 16]
