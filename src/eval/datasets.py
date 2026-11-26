@@ -31,8 +31,6 @@ def normalize_eval_datasets(datasets_cfg):
     """
     result = {}
     for name, cfg in datasets_cfg.items():
-        if 'fid' in cfg['metrics'] and 'reference_npz' not in cfg:
-            raise ValueError(f"eval.datasets.{name} missing 'reference_npz', required for FID eval")
         result[name] = cfg.copy()
         # set target to name if not explicitly provided
         if 'target' not in result[name]:

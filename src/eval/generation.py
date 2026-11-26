@@ -182,12 +182,20 @@ def evaluate_generation_distributed(
         metrics_to_compute = ['fid']
     evaluators, local_scores = _init_evaluators(metrics_to_compute, condition_type, device)
 
+    # Without a reference_npz, FD metrics use the eval set's own images as the reference (online).
+    distributional = filter_distributional(metrics_to_compute)
+    online_ref = reference_npz_path is None and bool(distributional)
+
     # Generate images on this rank
-    generations = []
+    generations, reals = [], []
     iterator = tqdm(loader, desc=f"[Rank {rank}] Sampling", file=sys.stdout) if rank == 0 else loader
 
     with torch.inference_mode():
-        for _, cond in iterator:
+        for real, cond in iterator:
+            if online_ref:
+                if real.numel() == 0:
+                    raise ValueError("FD metrics without reference_npz need an eval set that yields images.")
+                reals.append((real * 255).round().to(torch.uint8).permute(0, 2, 3, 1).numpy())
             # Handle conditioning based on type
             if condition_type == "text":
                 n = len(cond)
@@ -262,7 +270,6 @@ def evaluate_generation_distributed(
     metrics = _aggregate_distributed_metrics(local_scores, device)
 
     # FID etc. need every sample on rank 0: gather over NCCL (collective, so all ranks call it).
-    distributional = filter_distributional(metrics_to_compute)
     need_combined = (
         'fid' in metrics_to_compute
         or 'inception_score' in metrics_to_compute
@@ -271,13 +278,18 @@ def evaluate_generation_distributed(
     combined_recons = (
         gather_to_rank0(generations, rank, world_size, device, num_samples) if need_combined else None
     )
+    combined_reals = (
+        gather_to_rank0(np.concatenate(reals), rank, world_size, device, num_samples) if online_ref else None
+    )
 
     # Rank 0 computes FID
     if rank == 0:
         if need_combined:
             print(f"[Eval] Combined generation NPZ shape: {combined_recons.shape}")
 
-            if 'fid' in metrics_to_compute or 'inception_score' in metrics_to_compute:
+            native = reference_npz_path is not None and (
+                'fid' in metrics_to_compute or 'inception_score' in metrics_to_compute)
+            if native:
                 device_str = "cuda" if device.type == "cuda" else "cpu"
                 if not os.path.exists(reference_npz_path):
                     raise FileNotFoundError(f"Reference NPZ not found at {reference_npz_path}")
@@ -287,12 +299,13 @@ def evaluate_generation_distributed(
                 metrics['fid'] = fid
                 metrics['inception_score'] = inception_score
 
-            # fd_evaluator distributional metrics (fdr6/mind6/...) on the same gathered array.
-            # fid/inception_score stay on the native calculate_gfid path above, so exclude them.
-            fd_metrics = [m for m in distributional if m not in ('fid', 'inception_score')]
+            # fd_evaluator metrics (fid/fd_*/fdr6/mind6/...) on the same gathered array; fid/inception_score
+            # stay on the native calculate_gfid path above when a reference_npz is given.
+            fd_metrics = [m for m in distributional if not (native and m in ('fid', 'inception_score'))]
             if fd_metrics:
                 metrics.update(compute_distributional_metrics(
-                    combined_recons, fd_metrics, device=device, batch_size=metric_batch_size))
+                    combined_recons, fd_metrics, reference_images=combined_reals,
+                    device=device, batch_size=metric_batch_size))
 
         # Print results
         print(f"[Eval] Step {global_step} Metrics:")
