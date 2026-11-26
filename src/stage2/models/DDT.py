@@ -3,28 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from timm.models.vision_transformer import PatchEmbed
 
-from .model_utils import ConditionEmbedder, GaussianFourierEmbedding, NormAttention, RMSNorm, RoPE, SwiGLUFFN
+from .model_utils import ConditionEmbedder, DiffusionTransformerBlock, GaussianFourierEmbedding, RMSNorm, RoPE, check_time_cond
 
 
 def modulate(x, shift, scale):
     return x * (1 + scale) + shift
 
 
-class DDTEncoderBlock(nn.Module):
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0):
-        super().__init__()
-        self.norm1 = RMSNorm(hidden_size)
-        self.norm2 = RMSNorm(hidden_size)
-        self.attn = NormAttention(hidden_size, num_heads)
-        self.mlp = SwiGLUFFN(hidden_size, int(2/3 * hidden_size * mlp_ratio))
-
-    def forward(self, x, rope, attn_mask=None):
-        x = x + self.attn(self.norm1(x), rope=rope, attn_mask=attn_mask)
-        x = x + self.mlp(self.norm2(x))
-        return x
-
-
-class DDTDecoderBlock(DDTEncoderBlock):
+class DDTDecoderBlock(DiffusionTransformerBlock):
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0):
         super().__init__(hidden_size, num_heads, mlp_ratio)
         self.adaln_modulation = nn.Sequential(
@@ -83,8 +69,10 @@ class DiTwDDTHead(nn.Module):
         cond_arch=None,
         is_meanflow=False,
         refiner_cfg=None,
+        time_cond="in_context",  # encoder time: "in_context" tokens or "adaln" (adaLN-single); decoder is adaLN on s
     ):
         super().__init__()
+        self.adaln = check_time_cond(time_cond, is_meanflow)
         self.in_channels = in_channels
         self.enc_hidden_size, dec_hidden_size = hidden_size
         self.num_enc_blocks, self.num_dec_blocks = depth
@@ -100,20 +88,23 @@ class DiTwDDTHead(nn.Module):
         self.s_projector = nn.Linear(self.enc_hidden_size, dec_hidden_size) if self.enc_hidden_size != dec_hidden_size else nn.Identity()
 
         # MeanFlow conditions on two times (t, t-r); add a second time embedder + tokens for absolute t
-        self.num_cond_tokens = cond_arch.num_t_tokens * (2 if is_meanflow else 1) + cond_arch.num_c_tokens
-        self.t_embedder = GaussianFourierEmbedding(self.enc_hidden_size, cond_arch.num_t_tokens)
+        n_t = 0 if self.adaln else cond_arch.num_t_tokens
+        self.num_cond_tokens = n_t * (2 if is_meanflow else 1) + cond_arch.num_c_tokens
+        self.t_embedder = GaussianFourierEmbedding(self.enc_hidden_size, n_t)
         if is_meanflow:
-            self.t_abs_embedder = GaussianFourierEmbedding(self.enc_hidden_size, cond_arch.num_t_tokens)
+            self.t_abs_embedder = GaussianFourierEmbedding(self.enc_hidden_size, n_t)
         self.ctx_embedder = ConditionEmbedder(
             self.enc_hidden_size, num_classes, context_dim, condition_type, cond_arch.num_c_tokens, refiner_cfg
         )
 
         self.blocks = []
         for _ in range(self.num_enc_blocks):
-            self.blocks.append(DDTEncoderBlock(self.enc_hidden_size, enc_num_heads, mlp_ratio))
+            self.blocks.append(DiffusionTransformerBlock(self.enc_hidden_size, enc_num_heads, mlp_ratio, adaln=self.adaln))
         for _ in range(self.num_dec_blocks):
             self.blocks.append(DDTDecoderBlock(dec_hidden_size, dec_num_heads, mlp_ratio))
         self.blocks = nn.ModuleList(self.blocks)
+        if self.adaln:  # one shared projection of the timestep embedding for all encoder blocks
+            self.modulation_embedder = nn.Sequential(nn.SiLU(), nn.Linear(self.enc_hidden_size, 6 * self.enc_hidden_size))
 
         self.final_layer = DDTFinalLayer(dec_hidden_size, self.x_patch_size, in_channels, cls_dim=z_dim if enable_reg else None)
         self.enc_rope = RoPE(self.enc_hidden_size // enc_num_heads, self.s_embedder.num_patches, self.num_cond_tokens, extra_tokens=int(enable_reg))
@@ -145,6 +136,9 @@ class DiTwDDTHead(nn.Module):
             nn.init.normal_(self.ctx_embedder.embedding_table.weight, std=0.02)
 
         # Zero-out adaLN modulation layers
+        if hasattr(self, "modulation_embedder"):
+            nn.init.constant_(self.modulation_embedder[1].weight, 0)
+            nn.init.constant_(self.modulation_embedder[1].bias, 0)
         for block in self.blocks:
             if hasattr(block, "adaln_modulation"):
                 nn.init.constant_(block.adaln_modulation[-1].weight, 0)
@@ -178,10 +172,13 @@ class DiTwDDTHead(nn.Module):
             cls_in = self.cls_in_norm_enc(self.cls_in_proj_enc(condition_kwargs["cls_t"]))
             seq.append(cls_in.unsqueeze(1))
         seq.append(self.s_embedder(x))
-        t_emb_base, t_emb = self.t_embedder(t, return_base_embed=True)
-        seq.append(t_emb)
-        if self.is_meanflow:
-            seq.append(self.t_abs_embedder(condition_kwargs["t_abs"]))
+        if self.adaln:
+            t_emb_base = self.t_embedder(t).unsqueeze(1)
+        else:
+            t_emb_base, t_emb = self.t_embedder(t, return_base_embed=True)
+            seq.append(t_emb)
+            if self.is_meanflow:
+                seq.append(self.t_abs_embedder(condition_kwargs["t_abs"]))
         seq.append(self.ctx_embedder(condition_kwargs["context"], condition_kwargs.get("attn_mask")))
         seq = torch.cat(seq, dim=1)
         return seq, t_emb_base
@@ -200,9 +197,10 @@ class DiTwDDTHead(nn.Module):
         zt_intermediate = None
         seq, t_emb_base = self._build_sequence(x, t, condition_kwargs)
         attn_mask = self._build_attn_mask(seq, condition_kwargs)
+        mod = self.modulation_embedder(t_emb_base.squeeze(1)) if self.adaln else None
         s, n = int(self.enable_reg), self.s_embedder.num_patches
         for i in range(self.num_enc_blocks):
-            seq = self.blocks[i](seq, self.enc_rope, attn_mask)
+            seq = self.blocks[i](seq, self.enc_rope, attn_mask, mod)
             if return_intermediate and (i + 1) == self.repa_layer_depth:
                 zt_intermediate = self.repa_projector(seq[:, :s + n, :])
         seq = self.s_projector(F.silu(t_emb_base + seq[:, :s + n, :]))
@@ -243,9 +241,10 @@ class DiTwDDTHeadIG(DiTwDDTHead):
         x_base = None
         seq, t_emb_base = self._build_sequence(x, t, condition_kwargs)
         attn_mask = self._build_attn_mask(seq, condition_kwargs)
+        mod = self.modulation_embedder(t_emb_base.squeeze(1)) if self.adaln else None
         s, n = int(self.enable_reg), self.s_embedder.num_patches
         for i in range(self.num_enc_blocks):
-            seq = self.blocks[i](seq, self.enc_rope, attn_mask)
+            seq = self.blocks[i](seq, self.enc_rope, attn_mask, mod)
             if return_intermediate and (i + 1) == self.repa_layer_depth:
                 zt_intermediate = self.repa_projector(seq[:, :s + n, :])
             if (i + 1) == self.base_model_depth:

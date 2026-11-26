@@ -184,3 +184,37 @@ class ConditionEmbedder(nn.Module):
 
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+
+
+def adaln_single(table, mod, n):
+    """adaLN-single: shared timestep modulation [B, n*H] + a layer's learned table [n, H] -> n x [B, H]."""
+    return (table + mod.unflatten(1, (n, -1))).unbind(1)
+
+
+def check_time_cond(time_cond, is_meanflow):
+    """Returns True for adaLN-single, False for in-context time tokens."""
+    if time_cond not in ("in_context", "adaln"):
+        raise ValueError(f"time_cond must be 'in_context' or 'adaln', got {time_cond!r}")
+    if time_cond == "adaln" and is_meanflow:
+        raise NotImplementedError("MeanFlow conditions on two times via in-context tokens; use time_cond='in_context'.")
+    return time_cond == "adaln"
+
+
+class DiffusionTransformerBlock(nn.Module):
+    """Pre-norm attention + SwiGLU block (LightningDiT, DDT encoder); optional adaLN-single time modulation."""
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, adaln=False):
+        super().__init__()
+        self.norm1 = RMSNorm(hidden_size)
+        self.norm2 = RMSNorm(hidden_size)
+        self.attn = NormAttention(hidden_size, num_heads)
+        self.mlp = SwiGLUFFN(hidden_size, int(2/3 * hidden_size * mlp_ratio))
+        if adaln:  # adaLN-single: per-block shift/scale/gate bias on the shared timestep modulation
+            self.scale_shift_table = nn.Parameter(torch.randn(6, hidden_size) / hidden_size ** 0.5)
+
+    def forward(self, x, rope, attn_mask=None, mod=None):
+        if mod is None:
+            x = x + self.attn(self.norm1(x), rope=rope, attn_mask=attn_mask)
+            return x + self.mlp(self.norm2(x))
+        shift1, scale1, gate1, shift2, scale2, gate2 = adaln_single(self.scale_shift_table, mod, 6)
+        x = x + gate1.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift1, scale1), rope=rope, attn_mask=attn_mask)
+        return x + gate2.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift2, scale2))
