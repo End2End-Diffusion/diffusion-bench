@@ -15,7 +15,7 @@ from .clipscore import CLIPScoreEvaluator
 from .distributed import create_eval_dataloader, gather_to_rank0
 from .distributional import compute_distributional_metrics, filter_distributional
 from .dpgbench import DPGEvaluator
-from .fid import calculate_gfid
+from .fid import calculate_fd_dinov2, calculate_gfid
 from .geneval import GenEvalEvaluator
 from .geneval2 import GenEval2Evaluator
 from .prism_bench import PrismBenchEvaluator
@@ -277,19 +277,23 @@ def evaluate_generation_distributed(
         if need_combined:
             print(f"[Eval] Combined generation NPZ shape: {combined_recons.shape}")
 
-            if 'fid' in metrics_to_compute or 'inception_score' in metrics_to_compute:
-                device_str = "cuda" if device.type == "cuda" else "cpu"
+            native = {'fid', 'inception_score', 'fd_dinov2'} & set(metrics_to_compute)
+            device_str = "cuda" if device.type == "cuda" else "cpu"
+            if native:
                 if not os.path.exists(reference_npz_path):
                     raise FileNotFoundError(f"Reference NPZ not found at {reference_npz_path}")
                 ref_stats = np.load(reference_npz_path)
                 print(f"[Eval] Loaded reference NPZ from {reference_npz_path}")
+            if 'fid' in native or 'inception_score' in native:
                 fid, inception_score = calculate_gfid(combined_recons, ref_stats, metric_batch_size, device_str)
                 metrics['fid'] = fid
                 metrics['inception_score'] = inception_score
+            if 'fd_dinov2' in native:  # needs dino_mu/dino_sigma in the reference (e.g. GPIC stats)
+                metrics['fd_dinov2'] = calculate_fd_dinov2(combined_recons, ref_stats, metric_batch_size, device_str)
 
             # fd_evaluator distributional metrics (fdr6/mind6/...) on the same gathered array.
-            # fid/inception_score stay on the native calculate_gfid path above, so exclude them.
-            fd_metrics = [m for m in distributional if m not in ('fid', 'inception_score')]
+            # fid/inception_score/fd_dinov2 stay on the native path above, so exclude them.
+            fd_metrics = [m for m in distributional if m not in native]
             if fd_metrics:
                 metrics.update(compute_distributional_metrics(
                     combined_recons, fd_metrics, device=device, batch_size=metric_batch_size))
