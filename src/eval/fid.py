@@ -1,5 +1,3 @@
-import functools
-
 import numpy as np
 import scipy.linalg
 import torch
@@ -7,8 +5,6 @@ from torch_fidelity import calculate_metrics
 from torch_fidelity.feature_extractor_inceptionv3 import (
     FeatureExtractorInceptionV3,  # original torch-fidelity :contentReference[oaicite:2]{index=2}
 )
-
-from PIL import Image
 
 from .utils import ImgArrDataset
 
@@ -99,30 +95,6 @@ def calculate_gfid(
     mu_ref, sigma_ref = ref_arr[f"{prefix}mu"], ref_arr[f"{prefix}sigma"]
     mu_gen, sigma_gen, logits_gen = _compute_inception_moments_from_arr(arr1, batch_size=batch_size, device=device)
     return _fid_from_moments(mu_gen, sigma_gen, mu_ref, sigma_ref), _inception_score(logits_gen)
-
-
-@functools.lru_cache
-def _dinov2(device):
-    return torch.hub.load("facebookresearch/dinov2", "dinov2_vitl14").to(device).eval()
-
-
-@torch.no_grad()
-def dinov2_features(arr, batch_size=64, device="cuda"):
-    """DINOv2 ViT-L/14 features of NHWC uint8 images, preprocessed as in GPIC / dgm-eval
-    (PIL bicubic resize to 224, ImageNet normalization)."""
-    mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
-    feats = []
-    for i in range(0, len(arr), batch_size):
-        x = np.stack([np.asarray(Image.fromarray(a).resize((224, 224), Image.BICUBIC)) for a in arr[i:i + batch_size]])
-        x = torch.from_numpy(x).to(device).permute(0, 3, 1, 2).float().div(255)
-        feats.append(_dinov2(device)((x - mean) / std).double().cpu().numpy())
-    return np.concatenate(feats)
-
-
-def calculate_fd_dinov2(arr, ref_arr, batch_size=64, device="cuda"):
-    f = dinov2_features(arr, batch_size, device)
-    return _fid_from_moments(f.mean(0), np.cov(f, rowvar=False), ref_arr["dino_mu"], ref_arr["dino_sigma"])
 
 def calculate_rfid(
     arr1,

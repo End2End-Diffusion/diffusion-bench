@@ -5,11 +5,10 @@ Download GPIC (stanford-vision-lab/gpic, ~100M permissive images) and center-cro
 Raw shards (~13 TB) are streamed and deleted after cropping; output needs ~3.3 TB at 256px and
 ~10.4 TB at 512px. Reruns resume where they stopped.
 
-Eval files go to <data-dir>/gpic-<res>/eval/: the 50K val/test captions ({val,test}/) and Inception
-+ DINOv2 reference stats ({val,test}_stats.npz, for `fid` and `fd_dinov2`). 256px uses GPIC's
-official stats; 512px stats are built here over the same images with GPIC's recipe (center crop +
-bicubic resize). `--eval` prepares only these. Note: GPIC's stats and its 50K captions are
-different subsets (~0.5 FID noise floor).
+FID files go to <data-dir>/gpic-<res>/eval/: the 50K val/test captions ({val,test}/) and Inception
+reference stats ({val,test}_stats.npz). 256px uses GPIC's official stats; 512px stats are built
+here over the same images with GPIC's recipe (center crop + bicubic resize). `--eval` prepares
+only these. Note: GPIC's stats and its 50K captions are different subsets (~0.5 FID noise floor).
 
 Usage:
     uv run python scripts/prepare_gpic.py [--res 256 512] [--eval]
@@ -116,32 +115,27 @@ def ref_crops(rel, keys, size, tmp_root):  # GPIC reference recipe: square cente
 
 
 def ref_stats(data_dir, split, keys, size, workers):
-    """Inception + DINOv2 moments of the protocol images, with the same extractors as src/eval/fid.py."""
+    """Inception moments of the protocol images, with the same extractor as src/eval/fid.py."""
     from torch_fidelity.feature_extractor_inceptionv3 import FeatureExtractorInceptionV3
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-    from eval.fid import dinov2_features
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     fe = FeatureExtractorInceptionV3(name="inception-v3-compat", features_list=["2048"]).to(device).eval()
     tmp_root = data_dir / ".gpic_tmp_eval"
     shutil.rmtree(tmp_root, ignore_errors=True)
     tmp_root.mkdir(parents=True)
-    feats = {"inception": [], "dino": []}
+    feats = []
     with ProcessPoolExecutor(workers) as pool:
         rels = [f"{split}/gpic_{split}_{i:05d}.tar" for i in range(SHARDS[split])]
         for f in as_completed([pool.submit(ref_crops, r, keys, size, tmp_root) for r in rels]):
-            crops = np.stack(f.result())
+            crops = f.result()
             for i in range(0, len(crops), 100):
+                x = torch.from_numpy(np.stack(crops[i:i + 100])).permute(0, 3, 1, 2).to(device)
                 with torch.no_grad():
-                    feats["inception"].append(fe(torch.from_numpy(crops[i:i + 100]).permute(0, 3, 1, 2).to(device))[0].double().cpu().numpy())
-            feats["dino"].append(dinov2_features(crops, 100, device))
+                    feats.append(fe(x)[0].double().cpu().numpy())
     shutil.rmtree(tmp_root, ignore_errors=True)
-    out = {}
-    for name, f in feats.items():
-        f = np.concatenate(f)
-        out[f"{name}_mu"], out[f"{name}_sigma"] = f.mean(0), np.cov(f, rowvar=False)
-    print(f"GPIC {split} {size}px reference: {len(f)}/{len(keys)} protocol images", flush=True)
-    return out
+    feats = np.concatenate(feats)
+    print(f"GPIC {split} {size}px reference: {len(feats)}/{len(keys)} protocol images", flush=True)
+    return dict(inception_mu=feats.mean(0), inception_sigma=np.cov(feats, rowvar=False))
 
 
 def prepare_eval(data_dir, sizes, workers):

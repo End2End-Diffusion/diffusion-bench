@@ -99,7 +99,7 @@ eval:
       data_dir: './data'
       split: 'eval/val'
       condition_type: 'text'
-      metrics: ['fid', 'fd_dinov2']
+      metrics: ['fid']
       reference_npz: './data/gpic-256/eval/val_stats.npz'
 
 misc:
