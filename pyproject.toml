@@ -38,6 +38,7 @@ dependencies = [
   "prism-bench-evaluator",
   "qwen-image-bench-evaluator",
   "fd-evaluator",
+  "flash-linear-attention>=0.5.2",
 ]
 
 [dependency-groups]
