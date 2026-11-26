@@ -126,7 +126,7 @@ For ImageNet, pick the CFG-off baseline (`[STAGE2_CONFIG_PATH].yaml`) or the per
 | **Output Prediction** | `x-prediction` `v-prediction` |
 | **Transport** | `Rectified-Flow` `MeanFlow` `Improved-MeanFlow` `Pixel-MeanFlow` `Drifting` |
 | **Loss** | `Flow Matching` `REPA` `iREPA` |
-| **Architecture** | `LightningDiT` `JiT` `DDT` `MMDiT-Single` <br>Timestep: in-context tokens (`LightningDiT`, `DDT` encoder; the `DDT` decoder adds adaLN), adaLN-single (`MMDiT-Single`). Text/class: in-context tokens for all |
+| **Architecture** | `LightningDiT` `JiT` `DDT` `MMDiT-Single` <br>Timestep (`time_cond`): `in_context` tokens (default) or `adaln` (adaLN-single; not with MeanFlow) for `LightningDiT` and the `DDT` encoder (the `DDT` decoder is always adaLN). `MMDiT-Single` = `LightningDiT` + `adaln`. Text/class: in-context tokens |
 | **Tasks** | `ImageNet`: class-conditional generation <br>`T2I`: text-to-image generation |
 | **Evaluation** | ImageNet: `FID` `IS` <br>T2I: `GenEval` `GenEval2` `DPGBench` `GenAIBench` `VQAScore` `PRISM-Bench` `Qwen-Image-Bench` |
 | **Training Backend** | `DDP` `FSDP [TODO]` |
