@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections import defaultdict
 from typing import Dict, Optional
 
@@ -20,7 +21,7 @@ from stage2.utils import (
     get_null_cond,
     sample_and_decode,
 )
-from utils import wandb_utils
+from utils import flops, wandb_utils
 from utils.checkpoint import save_stage2_checkpoint
 from utils.guidance_utils import get_model_forward_fn
 from utils.logging import save_eval_to_csv
@@ -104,6 +105,7 @@ def train_one_epoch(
     # Training loop
     #########################################################
     dataloader.set_epoch(epoch)
+    t_log, step_log = time.perf_counter(), global_step  # throughput window; reset after sampling/eval
     for step, (images, y) in enumerate(dataloader):
         images = images.to(device)
 
@@ -135,6 +137,9 @@ def train_one_epoch(
         # Forward + backward
         #########################################################
         model_kwargs = dict(context=context, attn_mask=context_attn_mask)
+        if rank == 0 and flops.FLOPS_PER_SAMPLE is None:
+            flops.measure(model, z, model_kwargs)
+            t_log = time.perf_counter()
 
         with autocast(**autocast_kwargs):
             loss_dict = transport.training_losses(
@@ -194,6 +199,10 @@ def train_one_epoch(
         if config.training.log_interval > 0 and global_step % config.training.log_interval == 0 and rank == 0:
             cur_loss = loss_diff.item()
             stats = {"train/loss": cur_loss, "train/lr": optimizer.param_groups[0]["lr"]}
+            if global_step > step_log:
+                sps = (global_step - step_log) * micro_batch_size * world_size * config.training.grad_accum_steps / (time.perf_counter() - t_log)
+                stats["perf/samples_per_sec"], stats["perf/mfu"] = sps, 100 * sps * flops.FLOPS_PER_SAMPLE / world_size / (flops.peak_flops() or float("nan"))
+                t_log, step_log = time.perf_counter(), global_step
             if config.repa.use_repa:
                 stats["train/loss_repa"] = loss_repa.item()
             if config.repa.use_reg:
@@ -254,6 +263,7 @@ def train_one_epoch(
                             wandb.log({name: wandb.Image(grid)}, step=global_step)
             dist.barrier()
             logger.info("Generating EMA samples done.")
+            t_log, step_log = time.perf_counter(), global_step
             model.train() # set model back to train mode
 
         #########################################################
@@ -288,6 +298,7 @@ def train_one_epoch(
                             wandb_utils.log({f"eval_{mod_name}/{k}_{ds_name}": v for k, v in eval_stats.items()}, step=global_step)
             model.train() # set model back to train mode
             logger.info("Evaluation done.")
+            t_log, step_log = time.perf_counter(), global_step
 
 
     #########################################################
