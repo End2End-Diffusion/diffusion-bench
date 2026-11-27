@@ -49,7 +49,7 @@ dataset:
 training:
   epochs: 50  # 50 virtual epochs x 2,000 optimizer steps = 100k steps (~1 GPIC epoch at batch 1024)
   global_batch_size: 1024
-  grad_accum_steps: 1  # 128/GPU (fits with --compile + fla)
+  grad_accum_steps: 2  # 64/GPU x 2; 128/GPU OOMs at 1B
   ema_decay: 0.9995
   num_workers: 4
   virtual_epoch_steps: 2000  # optimizer steps per virtual epoch
