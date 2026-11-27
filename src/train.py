@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb", action="store_true")
     parser.add_argument("--ckpt", type=str, default=None)
     parser.add_argument("--sync-checkpoints", action="store_true")
-    parser.add_argument("--compile", action="store_true", help="torch.compile the training loss function")
+    parser.add_argument("--compile", action=argparse.BooleanOptionalAction, default=True, help="torch.compile the training loss function (--no-compile to disable)")
     return parser.parse_args()
 
 
